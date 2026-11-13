@@ -1,0 +1,6 @@
+{
+  "name": "ФинПульс — Личные финансы и накопления",
+  "description": "Локальное веб-приложение (PWA) для учёта расходов, расчёта финансовой подушки безопасности, ведения целей накоплений и умного анализа бюджета.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
