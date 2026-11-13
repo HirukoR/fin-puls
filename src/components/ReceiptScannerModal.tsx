@@ -39,6 +39,9 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [mode, setMode] = useState<'image' | 'text'>('image');
   const [isScanning, setIsScanning] = useState(false);
+  const [scanStatusText, setScanStatusText] = useState(
+    'Анализируем скриншот и распределяем по категориям...'
+  );
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [rawText, setRawText] = useState('');
   const [drafts, setDrafts] = useState<ScannedTransactionDraft[]>([]);
@@ -75,11 +78,17 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     const objectUrl = URL.createObjectURL(file);
     setPreviewUrl(objectUrl);
     setIsScanning(true);
+    setScanStatusText('Подготовка скриншота и запуск распознавания...');
     setInfoBanner(null);
 
     try {
-      const result = await analyzeBankScreenshotImage(file, categories);
+      const result = await analyzeBankScreenshotImage(file, categories, (status) => {
+        setScanStatusText(status);
+      });
       setDrafts(result.drafts);
+      if (result.recognizedText) {
+        setRawText(result.recognizedText);
+      }
       if (result.source === 'gemini_vision') {
         setInfoBanner(
           `ИИ-сканер успешно распознал операций на скриншоте: ${result.drafts.length}. Проверьте категории перед сохранением.`
@@ -291,7 +300,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                   <div className="py-4 flex flex-col items-center gap-2">
                     <RefreshCw className="w-7 h-7 text-emerald-600 dark:text-emerald-400 animate-spin" />
                     <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      Анализируем скриншот и распределяем по категориям...
+                      {scanStatusText}
                     </p>
                   </div>
                 ) : (

@@ -139,3 +139,99 @@ test('parseBankStatementText auto-detects Russian merchants, categories, and amo
   assert.equal(parsed[3].categoryId, 'cat_salary');
   assert.equal(parsed[3].amount, 85000);
 });
+
+test('parseBankStatementText parses multi-line Ozon Bank OCR screenshot output accurately', () => {
+  const ozonOcrLines = [
+    '23:43 кал aN all al = [| °',
+    'Операции',
+    'Счёт -- Фильтр Без переводо',
+    'Расходы Доходы',
+    '©) 10 875Р @) 10 908 PL',
+    'Вчера',
+    'Ozon -973,38P',
+    'Покупка',
+    'Вероника Алексеевна С. + 980ОР',
+    'Пополнения',
+    '11 ноября, ср',
+    'Сервисы Яндекса -2294P',
+    '< Фастфуд',
+    'Вероника Алексеевна С. +2 300Р',
+    '+ Пополнения',
+    '10 ноября, BT',
+    'ry Лента - 619,98 Р',
+    '“7 Супермаркеты * Карта **1431 +',
+    'Вероника Алексеевна С. + 500 Р',
+    '+ Пополнения',
+    'Мегафон -20Р',
+    '+ Связь и Интернет',
+  ].join('\n');
+
+  const parsed = parseBankStatementText(
+    ozonOcrLines,
+    DEFAULT_CATEGORIES,
+    new Date('2026-11-13T15:00:00')
+  );
+
+  assert.equal(parsed.length, 7);
+  assert.deepEqual(
+    parsed.map((p) => ({
+      type: p.type,
+      amount: p.amount,
+      categoryId: p.categoryId,
+      date: p.date,
+      note: p.note,
+    })),
+    [
+      {
+        type: 'expense',
+        amount: 973,
+        categoryId: 'cat_marketplaces',
+        date: '2026-11-12',
+        note: 'Ozon • Покупка',
+      },
+      {
+        type: 'income',
+        amount: 980,
+        categoryId: 'cat_gifts',
+        date: '2026-11-12',
+        note: 'Вероника Алексеевна С. • Пополнения',
+      },
+      {
+        type: 'expense',
+        amount: 2294,
+        categoryId: 'cat_food',
+        date: '2026-11-11',
+        note: 'Сервисы Яндекса • Фастфуд',
+      },
+      {
+        type: 'income',
+        amount: 2300,
+        categoryId: 'cat_gifts',
+        date: '2026-11-11',
+        note: 'Вероника Алексеевна С. • Пополнения',
+      },
+      {
+        type: 'expense',
+        amount: 620,
+        categoryId: 'cat_food',
+        date: '2026-11-10',
+        note: 'Лента • Супермаркеты',
+      },
+      {
+        type: 'income',
+        amount: 500,
+        categoryId: 'cat_gifts',
+        date: '2026-11-10',
+        note: 'Вероника Алексеевна С. • Пополнения',
+      },
+      {
+        type: 'expense',
+        amount: 20,
+        categoryId: 'cat_subscriptions',
+        date: '2026-11-10',
+        note: 'Мегафон • Связь и Интернет',
+      },
+    ]
+  );
+});
+

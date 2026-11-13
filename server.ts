@@ -15,7 +15,7 @@ async function startServer() {
   const httpServer = createHttpServer(app);
   const PORT = Number(process.env.PORT) || 3000;
 
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '15mb' }));
 
   app.post('/api/analyze', async (req, res) => {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -106,7 +106,7 @@ async function startServer() {
     if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
       res.status(503).json({
         error: 'OFFLINE_MODE',
-        message: 'Серверный ключ ИИ не настроен, используется локальный парсер.',
+        message: 'Серверный ключ ИИ не настроен, используется встроенный OCR-парсер.',
       });
       return;
     }
@@ -143,12 +143,12 @@ async function startServer() {
           parts: [
             {
               inlineData: {
-                mimeType: mimeType || 'image/png',
+                mimeType: mimeType || 'image/jpeg',
                 data: imageBase64,
               },
             },
             {
-              text: `Распознай все банковские операции или позиции чека на этом скриншоте. Сегодняшняя дата: ${todayISO}. Сопоставь каждую операцию с наиболее подходящим categoryId из списка: [${categoriesListText}]. Если это списание/покупка — type="expense", если пополнение/зарплата/кэшбэк — type="income". Сумму укажи целым положительным числом в рублях/валюте. В поле note укажи название магазина или описание операции на русском языке.`,
+              text: `Распознай все отдельные банковские операции или позиции чека на этом скриншоте (игнорируй общие виджеты итогов за месяц в шапке вроде "Расходы 10 875 ₽ / Доходы 10 908 ₽"). Сегодняшняя дата: ${todayISO}. Учитывай заголовки дат ("Вчера", "11 ноября" и т.д.) и переводи их в формат YYYY-MM-DD. Сопоставь каждую операцию с наиболее подходящим categoryId из списка: [${categoriesListText}]. Если это списание/покупка (со знаком минус) — type="expense", если пополнение/перевод/зарплата/кэшбэк (со знаком плюс) — type="income". Сумму укажи целым положительным числом в рублях (округлив копейки). В поле note укажи название магазина/отправителя и подкатегорию из банка (например: "Сервисы Яндекса • Фастфуд" или "Лента • Супермаркеты").`,
             },
           ],
         },

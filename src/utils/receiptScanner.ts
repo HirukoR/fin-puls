@@ -43,6 +43,8 @@ const MERCHANT_RULES: MerchantRule[] = [
       'вкусно и точка',
       'бургер кинг',
       'ростикс',
+      'фастфуд',
+      'супермаркеты',
       'супермаркет',
       'продукты',
       'пекарня',
@@ -148,6 +150,8 @@ const MERCHANT_RULES: MerchantRule[] = [
       'icloud',
       'google one',
       'подписка',
+      'связь и интернет',
+      'мобильная связь',
       'мтс',
       'мегафон',
       'билайн',
@@ -161,6 +165,7 @@ const MERCHANT_RULES: MerchantRule[] = [
     categoryId: 'cat_health',
     keywords: [
       'аптека',
+      'аптеки',
       'горздрав',
       'ригла',
       '36.6',
@@ -196,6 +201,7 @@ const MERCHANT_RULES: MerchantRule[] = [
       'бар',
       'паб',
       'ресторан',
+      'рестораны',
       'кафе',
       'боулинг',
       'квест',
@@ -207,7 +213,14 @@ const MERCHANT_RULES: MerchantRule[] = [
   {
     categoryId: 'cat_salary',
     defaultType: 'income',
-    keywords: ['зарплата', 'аванс', 'зачисление заработной платы', 'оклад', 'премия', 'отпускные'],
+    keywords: [
+      'зарплата',
+      'аванс',
+      'зачисление заработной платы',
+      'оклад',
+      'премия',
+      'отпускные',
+    ],
   },
   {
     categoryId: 'cat_freelance',
@@ -222,7 +235,13 @@ const MERCHANT_RULES: MerchantRule[] = [
   {
     categoryId: 'cat_investments',
     defaultType: 'income',
-    keywords: ['проценты по вкладу', 'выплата процентов', 'дивиденды', 'купон', 'накопительный счёт'],
+    keywords: [
+      'проценты по вкладу',
+      'выплата процентов',
+      'дивиденды',
+      'купон',
+      'накопительный счёт',
+    ],
   },
   {
     categoryId: 'cat_cashback',
@@ -232,7 +251,14 @@ const MERCHANT_RULES: MerchantRule[] = [
   {
     categoryId: 'cat_gifts',
     defaultType: 'income',
-    keywords: ['подарок', 'перевод от', 'сбп от', 'пополнение от'],
+    keywords: [
+      'подарок',
+      'перевод от',
+      'сбп от',
+      'пополнение от',
+      'пополнения',
+      'входящий перевод',
+    ],
   },
   {
     categoryId: 'cat_sales',
@@ -246,6 +272,50 @@ const MERCHANT_RULES: MerchantRule[] = [
   },
 ];
 
+const RU_MONTH_PREFIXES: { prefix: string; month: string }[] = [
+  { prefix: 'январ', month: '01' },
+  { prefix: 'феврал', month: '02' },
+  { prefix: 'март', month: '03' },
+  { prefix: 'апрел', month: '04' },
+  { prefix: 'мая', month: '05' },
+  { prefix: 'май', month: '05' },
+  { prefix: 'июн', month: '06' },
+  { prefix: 'июл', month: '07' },
+  { prefix: 'август', month: '08' },
+  { prefix: 'сентябр', month: '09' },
+  { prefix: 'октябр', month: '10' },
+  { prefix: 'ноябр', month: '11' },
+  { prefix: 'декабр', month: '12' },
+];
+
+const BANK_SUBTITLE_KEYWORDS = [
+  'покупка',
+  'покупки',
+  'пополнения',
+  'пополнение',
+  'переводы',
+  'перевод',
+  'фастфуд',
+  'супермаркеты',
+  'супермаркет',
+  'связь и интернет',
+  'мобильная связь',
+  'жкх',
+  'жку',
+  'рестораны',
+  'кафе и рестораны',
+  'такси',
+  'транспорт',
+  'аптеки',
+  'медицина',
+  'здоровье',
+  'развлечения',
+  'маркетплейсы',
+  'подписки',
+  'оплата услуг',
+  'сбп',
+];
+
 export function matchCategoryByMerchant(
   text: string,
   categories: Category[]
@@ -253,18 +323,7 @@ export function matchCategoryByMerchant(
   const lower = text.toLowerCase();
   const availableIds = new Set(categories.map((c) => c.id));
 
-  // 1. Check custom category names first
-  for (const cat of categories) {
-    if (lower.includes(cat.name.toLowerCase())) {
-      return {
-        categoryId: cat.id,
-        type: cat.type,
-        confidence: 'high',
-      };
-    }
-  }
-
-  // 2. Check dictionary of Russian merchants
+  // 1. Check dictionary of Russian merchants and bank categories first
   for (const rule of MERCHANT_RULES) {
     for (const kw of rule.keywords) {
       if (lower.includes(kw)) {
@@ -277,6 +336,17 @@ export function matchCategoryByMerchant(
           };
         }
       }
+    }
+  }
+
+  // 2. Check custom category names
+  for (const cat of categories) {
+    if (lower.includes(cat.name.toLowerCase())) {
+      return {
+        categoryId: cat.id,
+        type: cat.type,
+        confidence: 'high',
+      };
     }
   }
 
@@ -293,24 +363,157 @@ export function matchCategoryByMerchant(
   };
 }
 
+function cleanOcrLineNoise(raw: string): string {
+  return raw
+    .replace(/(?:карта|card)?\s*[*•·]{1,4}\s*\d{3,4}/gi, ' ')
+    .replace(/^[\s"'“”«»<>+•*—–\-|©®@()[\]\\/]+/, '')
+    .replace(/^(?:ry|ту|гу|у7|“7|"7)\s+/i, '')
+    .replace(/^\d{1,2}\s+(?=[А-ЯЁA-Z][а-яёa-z]{2,})/, '')
+    .replace(/[\s+•*—–|]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseRussianDateHeader(line: string, referenceDate: Date): string | null {
+  const cleaned = cleanOcrLineNoise(line).toLowerCase();
+  if (!cleaned) return null;
+
+  const formatISO = (d: Date) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  if (/^сегодня(?:\s|$|[,.:])/.test(cleaned)) {
+    return formatISO(referenceDate);
+  }
+  if (/^вчера(?:\s|$|[,.:])/.test(cleaned)) {
+    const d = new Date(referenceDate);
+    d.setDate(d.getDate() - 1);
+    return formatISO(d);
+  }
+  if (/^позавчера(?:\s|$|[,.:])/.test(cleaned)) {
+    const d = new Date(referenceDate);
+    d.setDate(d.getDate() - 2);
+    return formatISO(d);
+  }
+
+  // Match "11 ноября, ср" or "10 ноября 2026"
+  const m = cleaned.match(/^(\d{1,2})\s+([а-яё]+)(?:[\s,]+([а-яёa-z]{2}|\d{4}))?/i);
+  if (m) {
+    const dayNum = Number(m[1]);
+    const monthWord = m[2];
+    if (dayNum >= 1 && dayNum <= 31) {
+      const matchedMonth = RU_MONTH_PREFIXES.find((item) =>
+        monthWord.startsWith(item.prefix)
+      );
+      if (matchedMonth) {
+        const yearStr =
+          m[3] && /^\d{4}$/.test(m[3]) ? m[3] : String(referenceDate.getFullYear());
+        const dd = String(dayNum).padStart(2, '0');
+        return `${yearStr}-${matchedMonth.month}-${dd}`;
+      }
+    }
+  }
+
+  return null;
+}
+
+function isBankSubtitleLine(line: string): boolean {
+  const cleaned = cleanOcrLineNoise(line).toLowerCase();
+  if (!cleaned || cleaned.length > 48) return false;
+  // Subtitle lines NEVER contain explicit signed amounts (like "- 4 350") or currency units after digits
+  if (/(?:^|\s)[+−-]\s*\d/.test(line)) return false;
+  if (/\d(?:[\s\u00A0.,]*\d)*\s*(?:₽|руб|р\.|ор\b|р\b|p\b|\$|€|₸)/i.test(line)) {
+    return false;
+  }
+  return BANK_SUBTITLE_KEYWORDS.some((kw) => cleaned.includes(kw));
+}
+
 export function parseBankStatementText(
   rawText: string,
   categories: Category[],
   referenceDate: Date = new Date()
 ): ScannedTransactionDraft[] {
   const todayISO = referenceDate.toISOString().slice(0, 10);
-  const lines = rawText
+  const rawLines = rawText
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter((l) => l.length >= 3);
+    .filter((l) => l.length >= 2);
 
   const drafts: ScannedTransactionDraft[] = [];
+  let currentSectionDate = todayISO;
+  let skipNextSummaryTotalsLine = false;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    const lowerLine = line.toLowerCase();
 
-    // Check explicit date DD.MM.YYYY or YYYY-MM-DD in the line
-    let detectedDate = todayISO;
+    // 1. Skip phone status bar lines (e.g., "23:43 ... КБ/с ...") or top UI nav
+    if (
+      /^\d{1,2}:\d{2}\b/.test(line) ||
+      /^(?:операции|история|все операции|счёт|фильтр|без переводов)/i.test(
+        cleanOcrLineNoise(line)
+      )
+    ) {
+      continue;
+    }
+
+    // 2. Detect summary header like "Расходы Доходы" and skip the summary totals row below it
+    if (/расходы\s+доходы|доходы\s+расходы|баланс\s+за\s+месяц/i.test(lowerLine)) {
+      skipNextSummaryTotalsLine = true;
+      continue;
+    }
+
+    if (skipNextSummaryTotalsLine) {
+      skipNextSummaryTotalsLine = false;
+      // If this line has no explicit +/- signs (or has 2 separate totals like "10 875Р 10 908Р"), skip it
+      const hasExplicitSign = /(?:^|\s)[+−-]\s*\d/.test(line);
+      if (!hasExplicitSign) {
+        continue;
+      }
+    }
+
+    // 3. Check if this line is a section date header ("Вчера", "11 ноября, ср", etc.)
+    const headerDate = parseRussianDateHeader(line, referenceDate);
+    if (headerDate) {
+      currentSectionDate = headerDate;
+      continue;
+    }
+
+    // 4. Check if this line is a bank category subtitle for the previous transaction
+    if (drafts.length > 0 && isBankSubtitleLine(line)) {
+      const prev = drafts[drafts.length - 1];
+      const subtitleClean = cleanOcrLineNoise(line);
+      if (subtitleClean && !prev.note.toLowerCase().includes(subtitleClean.toLowerCase())) {
+        const combinedNote = `${prev.note} • ${subtitleClean}`;
+        const rematched = matchCategoryByMerchant(combinedNote, categories);
+        prev.note = combinedNote;
+        if (rematched.confidence === 'high') {
+          prev.categoryId = rematched.categoryId;
+          // Preserve explicit '+' or '-' sign from the transaction line unless subtitle strongly confirms income
+          if (rematched.type === 'income' && /пополнен|зачислен|перевод от|зарплат|кэшбэк/i.test(subtitleClean)) {
+            prev.type = 'income';
+          }
+        }
+        // Ensure category type matches transaction type
+        const catObj = categories.find((c) => c.id === prev.categoryId);
+        if (!catObj || catObj.type !== prev.type) {
+          const fallbackCat =
+            prev.type === 'income'
+              ? categories.find((c) => c.id === 'cat_gifts') ||
+                categories.find((c) => c.type === 'income')
+              : categories.find((c) => c.id === 'cat_other') ||
+                categories.find((c) => c.type === 'expense');
+          if (fallbackCat) prev.categoryId = fallbackCat.id;
+        }
+      }
+      continue;
+    }
+
+    // 5. Check explicit inline date DD.MM.YYYY or YYYY-MM-DD
+    let detectedDate = currentSectionDate;
     const ruDateMatch = line.match(/\b(\d{2})\.(\d{2})(?:\.(\d{2,4}))?\b/);
     const isoDateMatch = line.match(/\b(\d{4}-\d{2}-\d{2})\b/);
 
@@ -324,46 +527,72 @@ export function parseBankStatementText(
       detectedDate = `${yyyy}-${mm}-${dd}`;
     }
 
-    // Remove date tokens before extracting amount
-    const lineWithoutDate = line
+    // Remove inline dates, times, and card masks (**1431) before extracting monetary amount
+    const lineForAmount = line
+      .replace(/(?:карта|card)?\s*[*•·]{1,4}\s*\d{3,4}/gi, ' ')
       .replace(/\b\d{4}-\d{2}-\d{2}\b/g, ' ')
       .replace(/\b\d{2}\.\d{2}(?:\.\d{2,4})?\b/g, ' ')
-      .replace(/\b\d{2}:\d{2}\b/g, ' ');
+      .replace(/\b\d{1,2}:\d{2}\b/g, ' ');
 
-    // Match amount like "- 1 450,50 ₽", "+85000 руб", "2 340 ₽", "1490р"
-    const amountRegex = /([+−-])?\s*(\d{1,3}(?:[\s\u00A0]\d{3})+|\d+)(?:[.,](\d{1,2}))?\s*(?:₽|руб\.?|р\.?|rub|\$|€|₸|byn)?/gi;
-    const matches = Array.from(lineWithoutDate.matchAll(amountRegex));
-    if (matches.length === 0) continue;
+    // Match amounts with currency or explicit +/- sign.
+    // Note: Tesseract OCR often reads '₽' as Cyrillic 'Р', 'ОР', or Latin 'P'.
+    const amountRegex =
+      /([+−-])?\s*(\d{1,3}(?:[\s\u00A0]\d{3})+|\d+)(?:[.,](\d{1,2}))?\s*(₽|руб\.?|р\.?|rub|ор|р|p|\$|€|₸|byn)?/gi;
 
-    // Pick the most likely monetary match (prefer one near currency sign or largest number)
-    const bestMatch = matches.reduce((best, cur) => {
-      const curHasCurrency = /[₽руб$€₸]/i.test(cur[0]);
-      const bestHasCurrency = /[₽руб$€₸]/i.test(best[0]);
-      if (curHasCurrency && !bestHasCurrency) return cur;
-      const curNum = Number(cur[2].replace(/\s+/g, ''));
-      const bestNum = Number(best[2].replace(/\s+/g, ''));
-      return curNum > bestNum ? cur : best;
-    }, matches[0]);
+    const allMatches = Array.from(lineForAmount.matchAll(amountRegex)).filter((m) => {
+      const sign = m[1] || '';
+      const currency = m[4] || '';
+      const rawDigits = (m[2] || '').replace(/[\s\u00A0]+/g, '');
+      if (!rawDigits || Number(rawDigits) <= 0) return false;
+      // Require either an explicit +/- sign OR a currency unit so random numbers aren't parsed as money
+      return Boolean(sign || currency);
+    });
+
+    if (allMatches.length === 0) continue;
+
+    // Skip lines that look like dual summary widgets (2+ unsigned currency totals on one line)
+    if (
+      allMatches.length >= 2 &&
+      allMatches.every((m) => !m[1] && Boolean(m[4]))
+    ) {
+      continue;
+    }
+
+    // Pick the best monetary match (prefer one with both sign & currency, or at end of line)
+    const bestMatch = allMatches.reduce((best, cur) => {
+      const curScore = (cur[1] ? 2 : 0) + (cur[4] ? 2 : 0);
+      const bestScore = (best[1] ? 2 : 0) + (best[4] ? 2 : 0);
+      if (curScore !== bestScore) return curScore > bestScore ? cur : best;
+      const curVal = Number(cur[2].replace(/[\s\u00A0]+/g, ''));
+      const bestVal = Number(best[2].replace(/[\s\u00A0]+/g, ''));
+      return curVal >= bestVal ? cur : best;
+    }, allMatches[0]);
 
     const signChar = bestMatch[1] || '';
-    const intPart = bestMatch[2].replace(/[\s\u00A0]+/g, '');
-    const numericAmount = Math.round(Number(intPart));
+    const intPartStr = bestMatch[2].replace(/[\s\u00A0]+/g, '');
+    const decPartStr = bestMatch[3] || '';
+    const floatAmount = Number(
+      decPartStr ? `${intPartStr}.${decPartStr}` : intPartStr
+    );
+    const numericAmount = Math.round(floatAmount);
+
     if (!numericAmount || numericAmount <= 0 || numericAmount > 100_000_000) continue;
 
-    // Clean merchant / note description
-    const cleanedNote = lineWithoutDate
-      .replace(bestMatch[0], ' ')
-      .replace(/[•*—–]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
+    // Extract merchant / note text
+    const rawNote = lineForAmount.replace(bestMatch[0], ' ');
+    const cleanedNote = cleanOcrLineNoise(rawNote);
     const noteText = cleanedNote || 'Операция по карте';
+
     const matched = matchCategoryByMerchant(noteText, categories);
 
+    const hasMinusSign = signChar === '-' || signChar === '−';
+    const hasPlusSign = signChar === '+';
+
     const isExplicitIncome =
-      signChar === '+' ||
-      matched.type === 'income' ||
-      /пополнение|зачисление|зарплата|перевод от|кэшбэк/i.test(noteText);
+      !hasMinusSign &&
+      (hasPlusSign ||
+        matched.type === 'income' ||
+        /пополнение|зачисление|зарплата|перевод от|кэшбэк/i.test(noteText));
 
     const finalType: TransactionType = isExplicitIncome ? 'income' : 'expense';
     let finalCategoryId = matched.categoryId;
@@ -372,9 +601,18 @@ export function parseBankStatementText(
       const catObj = categories.find((c) => c.id === finalCategoryId);
       if (!catObj || catObj.type !== 'income') {
         const defaultInc =
+          categories.find((c) => c.id === 'cat_gifts') ||
           categories.find((c) => c.id === 'cat_salary') ||
           categories.find((c) => c.type === 'income');
         if (defaultInc) finalCategoryId = defaultInc.id;
+      }
+    } else {
+      const catObj = categories.find((c) => c.id === finalCategoryId);
+      if (!catObj || catObj.type !== 'expense') {
+        const defaultExp =
+          categories.find((c) => c.id === 'cat_other') ||
+          categories.find((c) => c.type === 'expense');
+        if (defaultExp) finalCategoryId = defaultExp.id;
       }
     }
 
@@ -400,6 +638,30 @@ export const BANK_SCREENSHOT_PRESETS: {
   rawStatement: string;
 }[] = [
   {
+    id: 'preset_ozon',
+    bankName: 'Ozon Банк (Скриншот операций)',
+    subtitle: '7 операций: Ozon, Сервисы Яндекса, Лента, Мегафон и пополнения',
+    rawStatement: [
+      'Вчера',
+      'Ozon -973,38 ₽',
+      'Покупка',
+      'Вероника Алексеевна С. +980 ₽',
+      'Пополнения',
+      '11 ноября, ср',
+      'Сервисы Яндекса -2 294 ₽',
+      'Фастфуд',
+      'Вероника Алексеевна С. +2 300 ₽',
+      'Пополнения',
+      '10 ноября, вт',
+      'Лента -619,98 ₽',
+      'Супермаркеты • Карта **1431',
+      'Вероника Алексеевна С. +500 ₽',
+      'Пополнения',
+      'Мегафон -20 ₽',
+      'Связь и Интернет',
+    ].join('\n'),
+  },
+  {
     id: 'preset_tbank',
     bankName: 'Т-Банк (История операций)',
     subtitle: '6 операций за день: супермаркеты, такси, подписка и маркетплейс',
@@ -424,49 +686,90 @@ export const BANK_SCREENSHOT_PRESETS: {
       '+ 1 850 ₽ Зачисление кэшбэка Спасибо',
     ].join('\n'),
   },
-  {
-    id: 'preset_alfa',
-    bankName: 'Альфа-Банк (Скриншот чеков недели)',
-    subtitle: '5 операций: зарплата, Wildberries, фитнес и доставка',
-    rawStatement: [
-      '+ 82 500 ₽ Зачисление заработной платы (аванс)',
-      'Wildberries Покупки −5 490 ₽',
-      'Самокат Доставка продуктов −1 430 ₽',
-      'Инвитро Медицинские анализы −3 200 ₽',
-      'Додо Пицца Рестораны −1 190 ₽',
-    ].join('\n'),
-  },
 ];
+
+async function compressImageForUpload(
+  file: File
+): Promise<{ base64: string; mimeType: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('File read error'));
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxDim = 1600;
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            const scale = maxDim / Math.max(width, height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            const commaIdx = dataUrl.indexOf(',');
+            resolve({
+              base64: commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl,
+              mimeType: file.type || 'image/jpeg',
+            });
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedUrl = canvas.toDataURL('image/jpeg', 0.88);
+          const commaIdx = compressedUrl.indexOf(',');
+          resolve({
+            base64: commaIdx >= 0 ? compressedUrl.slice(commaIdx + 1) : compressedUrl,
+            mimeType: 'image/jpeg',
+          });
+        } catch {
+          const commaIdx = dataUrl.indexOf(',');
+          resolve({
+            base64: commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl,
+            mimeType: file.type || 'image/jpeg',
+          });
+        }
+      };
+      img.onerror = () => {
+        const commaIdx = dataUrl.indexOf(',');
+        resolve({
+          base64: commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl,
+          mimeType: file.type || 'image/jpeg',
+        });
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 export async function analyzeBankScreenshotImage(
   file: File,
-  categories: Category[]
+  categories: Category[],
+  onProgress?: (statusText: string) => void
 ): Promise<{
-  source: 'gemini_vision' | 'smart_fallback';
+  source: 'gemini_vision' | 'browser_ocr' | 'smart_fallback';
   drafts: ScannedTransactionDraft[];
+  recognizedText?: string;
   message?: string;
 }> {
-  const base64Data = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const res = String(reader.result || '');
-      const commaIdx = res.indexOf(',');
-      resolve(commaIdx >= 0 ? res.slice(commaIdx + 1) : res);
-    };
-    reader.onerror = () => reject(new Error('File read error'));
-    reader.readAsDataURL(file);
-  });
+  onProgress?.('Подготовка изображения и отправка в ИИ-сканер...');
+  const { base64: base64Data, mimeType } = await compressImageForUpload(file);
 
+  // 1. Try server-side Gemini Vision API (/api/scan-receipt on AI Studio or Vercel Serverless)
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 14000);
 
     const response = await fetch('/api/scan-receipt', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         imageBase64: base64Data,
-        mimeType: file.type || 'image/png',
+        mimeType,
         categories: categories.map((c) => ({
           id: c.id,
           name: c.name,
@@ -523,25 +826,35 @@ export async function analyzeBankScreenshotImage(
       }
     }
   } catch {
-    // Graceful fallback when running locally without GEMINI_API_KEY or on static hosting
+    // Proceed to built-in Browser Neural OCR (Tesseract.js)
   }
 
-  // Smart fallback: inspect filename for merchant hints or provide realistic editable bank screen items
-  const fileNameClean = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ');
-  const parsedFromFileName = parseBankStatementText(fileNameClean, categories);
-  if (parsedFromFileName.length > 0) {
-    return {
-      source: 'smart_fallback',
-      drafts: parsedFromFileName,
-      message:
-        'Распознано локальным модулем. Проверьте суммы и категории перед сохранением.',
-    };
+  // 2. Built-in Browser OCR (Tesseract.js rus+eng) — works 100% client-side on Vercel / static hosting without API keys
+  try {
+    onProgress?.('Идёт оптическое распознавание текста на скриншоте (OCR rus+eng)...');
+    const Tesseract = await import('tesseract.js');
+    const ocrResult = await Tesseract.recognize(file, 'rus+eng');
+    const ocrText = ocrResult?.data?.text || '';
+
+    if (ocrText.trim().length > 0) {
+      const parsedDrafts = parseBankStatementText(ocrText, categories);
+      if (parsedDrafts.length > 0) {
+        return {
+          source: 'browser_ocr',
+          drafts: parsedDrafts,
+          recognizedText: ocrText,
+          message: `Встроенный OCR-сканер успешно распознал операций на скриншоте: ${parsedDrafts.length}. Проверьте суммы и категории перед сохранением.`,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Browser OCR error:', err);
   }
 
   return {
     source: 'smart_fallback',
-    drafts: parseBankStatementText(BANK_SCREENSHOT_PRESETS[0].rawStatement, categories),
+    drafts: [],
     message:
-      'Локальный демо-режим распознавания скриншота (без серверного ключа ИИ). Вы можете отредактировать любые суммы и категории прямо в таблице или вставить текст из банка.',
+      'Не удалось автоматически прочитать суммы со скриншота. Попробуйте более чёткий скриншот или переключитесь на вкладку «Текст / СМС из банка».',
   };
 }
