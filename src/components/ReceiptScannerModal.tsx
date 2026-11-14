@@ -426,7 +426,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                       </div>
 
                       {/* Note / Merchant */}
-                      <div className="sm:col-span-4">
+                      <div className="sm:col-span-3">
                         <input
                           type="text"
                           aria-label="Описание магазина или операции"
@@ -456,8 +456,21 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                         </select>
                       </div>
 
+                      {/* Date */}
+                      <div className="sm:col-span-2">
+                        <input
+                          type="date"
+                          aria-label="Дата операции"
+                          value={item.date}
+                          onChange={(e) =>
+                            handleUpdateDraft(item.id, { date: e.target.value })
+                          }
+                          className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                        />
+                      </div>
+
                       {/* Amount + Delete */}
-                      <div className="sm:col-span-3 flex items-center gap-2">
+                      <div className="sm:col-span-2 flex items-center gap-1.5">
                         <input
                           type="number"
                           min="1"
@@ -468,7 +481,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                               amount: Math.max(0, Number(e.target.value) || 0),
                             })
                           }
-                          className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-right text-xs font-mono font-semibold text-slate-900 dark:text-slate-100"
+                          className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-2 py-1.5 text-right text-xs font-mono font-semibold text-slate-900 dark:text-slate-100"
                         />
                         <button
                           type="button"

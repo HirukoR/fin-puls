@@ -59,6 +59,8 @@ const MERCHANT_RULES: MerchantRule[] = [
     keywords: [
       'ozon',
       'озон',
+      'огоп',
+      '0zon',
       'wildberries',
       'вайлдберриз',
       'wb',
@@ -288,32 +290,21 @@ const RU_MONTH_PREFIXES: { prefix: string; month: string }[] = [
   { prefix: 'декабр', month: '12' },
 ];
 
-const BANK_SUBTITLE_KEYWORDS = [
-  'покупка',
-  'покупки',
-  'пополнения',
-  'пополнение',
-  'переводы',
-  'перевод',
-  'фастфуд',
-  'супермаркеты',
-  'супермаркет',
-  'связь и интернет',
-  'мобильная связь',
-  'жкх',
-  'жку',
-  'рестораны',
-  'кафе и рестораны',
-  'такси',
-  'транспорт',
-  'аптеки',
-  'медицина',
-  'здоровье',
-  'развлечения',
-  'маркетплейсы',
-  'подписки',
-  'оплата услуг',
-  'сбп',
+const BANK_SUBTITLE_CANONICAL_MAP: { keywords: string[]; canonical: string }[] = [
+  { keywords: ['фастфуд'], canonical: 'Фастфуд' },
+  { keywords: ['супермаркеты', 'супермаркет'], canonical: 'Супермаркеты' },
+  { keywords: ['пополнения', 'пополнение'], canonical: 'Пополнения' },
+  { keywords: ['покупка', 'покупки'], canonical: 'Покупка' },
+  { keywords: ['связь и интернет', 'мобильная связь'], canonical: 'Связь и Интернет' },
+  { keywords: ['переводы', 'перевод', 'сбп'], canonical: 'Переводы' },
+  { keywords: ['кафе и рестораны', 'рестораны'], canonical: 'Кафе и рестораны' },
+  { keywords: ['такси', 'транспорт'], canonical: 'Транспорт' },
+  { keywords: ['аптеки', 'медицина', 'здоровье'], canonical: 'Здоровье' },
+  { keywords: ['маркетплейсы'], canonical: 'Маркетплейсы' },
+  { keywords: ['подписки'], canonical: 'Подписки' },
+  { keywords: ['жкх', 'жку'], canonical: 'ЖКХ' },
+  { keywords: ['развлечения'], canonical: 'Развлечения' },
+  { keywords: ['оплата услуг'], canonical: 'Оплата услуг' },
 ];
 
 export function matchCategoryByMerchant(
@@ -363,15 +354,28 @@ export function matchCategoryByMerchant(
   };
 }
 
+function normalizeMerchantLookalikes(text: string): string {
+  return text
+    .replace(/(^|\s)(?:огоп|оzоп|ozоп|0zon|oz0n)(?=\s|$|[•.,])/gi, '$1Ozon')
+    .replace(/(^|\s)лента(?=\s|$|[•.,])/gi, '$1Лента')
+    .replace(/(^|\s)мегафон(?=\s|$|[•.,])/gi, '$1Мегафон')
+    .replace(/(^|\s)сервисы\s+яндекса(?=\s|$|[•.,])/gi, '$1Сервисы Яндекса');
+}
+
 function cleanOcrLineNoise(raw: string): string {
-  return raw
+  const cleaned = raw
     .replace(/(?:карта|card)?\s*[*•·]{1,4}\s*\d{3,4}/gi, ' ')
+    // Strip leading symbol noise and icon tokens with closing brackets/quotes like "Ге) ", "©) ", "“7 "
     .replace(/^[\s"'“”«»<>+•*—–\-|©®@()[\]\\/]+/, '')
-    .replace(/^(?:ry|ту|гу|у7|“7|"7)\s+/i, '')
-    .replace(/^\d{1,2}\s+(?=[А-ЯЁA-Z][а-яёa-z]{2,})/, '')
-    .replace(/[\s+•*—–|]+$/, '')
+    .replace(/^(?:\S{1,4}[)\]}|>»”"]\s+)+/g, '')
+    .replace(/^[\s"'“”«»<>+•*—–\-|©®@()[\]\\/]+/, '')
+    // Strip 1-2 character OCR icon badge noise (like "ry ", "rs ", "К ", "у7 ") before a Capitalized word
+    .replace(/^(?!(?:ип|я)\s)[a-zA-Zа-яА-ЯёЁ0-9]{1,2}\s+(?=[А-ЯЁA-Z][а-яёa-z]{2,})/u, '')
+    .replace(/[\s+•*—–|<>]+$/, '')
     .replace(/\s+/g, ' ')
     .trim();
+
+  return normalizeMerchantLookalikes(cleaned);
 }
 
 function parseRussianDateHeader(line: string, referenceDate: Date): string | null {
@@ -420,15 +424,20 @@ function parseRussianDateHeader(line: string, referenceDate: Date): string | nul
   return null;
 }
 
-function isBankSubtitleLine(line: string): boolean {
+function extractCanonicalBankSubtitle(line: string): string | null {
   const cleaned = cleanOcrLineNoise(line).toLowerCase();
-  if (!cleaned || cleaned.length > 48) return false;
+  if (!cleaned || cleaned.length > 48) return null;
   // Subtitle lines NEVER contain explicit signed amounts (like "- 4 350") or currency units after digits
-  if (/(?:^|\s)[+−-]\s*\d/.test(line)) return false;
+  if (/(?:^|\s)[+−-]\s*\d/.test(line)) return null;
   if (/\d(?:[\s\u00A0.,]*\d)*\s*(?:₽|руб|р\.|ор\b|р\b|p\b|\$|€|₸)/i.test(line)) {
-    return false;
+    return null;
   }
-  return BANK_SUBTITLE_KEYWORDS.some((kw) => cleaned.includes(kw));
+  for (const entry of BANK_SUBTITLE_CANONICAL_MAP) {
+    if (entry.keywords.some((kw) => cleaned.includes(kw))) {
+      return entry.canonical;
+    }
+  }
+  return null;
 }
 
 export function parseBankStatementText(
@@ -483,17 +492,20 @@ export function parseBankStatementText(
     }
 
     // 4. Check if this line is a bank category subtitle for the previous transaction
-    if (drafts.length > 0 && isBankSubtitleLine(line)) {
+    const canonicalSubtitle = drafts.length > 0 ? extractCanonicalBankSubtitle(line) : null;
+    if (canonicalSubtitle) {
       const prev = drafts[drafts.length - 1];
-      const subtitleClean = cleanOcrLineNoise(line);
-      if (subtitleClean && !prev.note.toLowerCase().includes(subtitleClean.toLowerCase())) {
-        const combinedNote = `${prev.note} • ${subtitleClean}`;
+      if (!prev.note.toLowerCase().includes(canonicalSubtitle.toLowerCase())) {
+        const combinedNote = `${prev.note} • ${canonicalSubtitle}`;
         const rematched = matchCategoryByMerchant(combinedNote, categories);
         prev.note = combinedNote;
         if (rematched.confidence === 'high') {
           prev.categoryId = rematched.categoryId;
           // Preserve explicit '+' or '-' sign from the transaction line unless subtitle strongly confirms income
-          if (rematched.type === 'income' && /пополнен|зачислен|перевод от|зарплат|кэшбэк/i.test(subtitleClean)) {
+          if (
+            rematched.type === 'income' &&
+            /пополнен|зачислен|перевод от|зарплат|кэшбэк/i.test(canonicalSubtitle)
+          ) {
             prev.type = 'income';
           }
         }
