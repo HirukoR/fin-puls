@@ -23,13 +23,21 @@ const MERCHANT_RULES: MerchantRule[] = [
     keywords: [
       'пятёрочка',
       'пятерочка',
+      'pyaterochka',
       'перекрёсток',
       'перекресток',
+      'perekrestok',
       'вкусвилл',
+      'vkusvill',
       'магнит',
+      'magnit',
       'лента',
+      'lenta',
+      'монетка',
+      'monetka',
       'ашан',
       'самокат',
+      'samokat',
       'яндекс лавка',
       'лавка',
       'дикси',
@@ -52,9 +60,13 @@ const MERCHANT_RULES: MerchantRule[] = [
       'кухня на районе',
       'деливери',
       'яндекс еда',
+      'yandex*5814*eda',
       'красное & белое',
       'красное и белое',
+      'krasnoe&beloe',
       'к&б',
+      'ervending',
+      'снеки',
     ],
   },
   {
@@ -91,8 +103,19 @@ const MERCHANT_RULES: MerchantRule[] = [
       'uber',
       'такси',
       'метро',
+      'metro tpp',
+      'метрополитен',
       'тройка',
       'мосгортранс',
+      'и-сеть',
+      'трамвай',
+      'автобус',
+      'троллейбус',
+      'оплата проезда',
+      'проезд',
+      'bikeberi',
+      'яндекс байк',
+      'электровелосипед',
       'цппк',
       'ржд',
       'аэрофлот',
@@ -164,6 +187,7 @@ const MERCHANT_RULES: MerchantRule[] = [
       't2',
       'йота',
       'yota',
+      'quattro bot',
     ],
   },
   {
@@ -219,6 +243,11 @@ const MERCHANT_RULES: MerchantRule[] = [
       'portal',
       'steam',
       'playstation',
+      'цифровой товар',
+      'игровой ключ',
+      'игры',
+      'pay4game',
+      'paytome',
       'музей',
     ],
   },
@@ -237,12 +266,21 @@ const MERCHANT_RULES: MerchantRule[] = [
   {
     categoryId: 'cat_freelance',
     defaultType: 'income',
-    keywords: ['фриланс', 'гонорар', 'оплата по договору', 'проект', 'консультация'],
+    keywords: [
+      'фриланс',
+      'гонорар',
+      'оплата по договору',
+      'агентскому договору',
+      'выплата исполнителю',
+      'требованию бенефициара',
+      'проект',
+      'консультация',
+    ],
   },
   {
     categoryId: 'cat_business',
     defaultType: 'income',
-    keywords: ['самозанятый', 'выручка', 'оплата по счёту', 'оплата услуг', 'бизнес', 'ип'],
+    keywords: ['самозанятый', 'выручка', 'оплата по счёту', 'оплата услуг', 'бизнес'],
   },
   {
     categoryId: 'cat_investments',
@@ -280,7 +318,15 @@ const MERCHANT_RULES: MerchantRule[] = [
   {
     categoryId: 'cat_income_other',
     defaultType: 'income',
-    keywords: ['налоговый вычет', 'фнс', 'возврат средств', 'стипендия', 'пособие'],
+    keywords: [
+      'налоговый вычет',
+      'фнс',
+      'возврат средств',
+      'возврат оплаты',
+      'возврат',
+      'стипендия',
+      'пособие',
+    ],
   },
 ];
 
@@ -428,6 +474,147 @@ function normalizeRocketbankWideFontLine(rawLine: string): string {
   );
 }
 
+/**
+ * Formats verbose multi-line PDF bank statement descriptions (such as Ozon Bank, Sberbank, T-Bank)
+ * into clean, human-readable merchant names and notes.
+ */
+export function formatBankStatementDescription(rawDesc: string): string {
+  const s = rawDesc.replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+
+  // 1. Ozon Marketplace purchase ("Оплата товаров/услуг на Платформе Ozon, заказ № ...")
+  if (/на\s+платформе\s+ozon/i.test(s)) {
+    const orderMatch = s.match(/заказ\s*№\s*([\d\-]+)/i);
+    return orderMatch ? `Ozon • Заказ № ${orderMatch[1]}` : 'Ozon • Покупка';
+  }
+
+  // 2. Card purchase or refund ("Оплата товаров по карте 1431 сумма 619.98 в LENTA-368 Ekaterinburg RU дата ...")
+  const isRefund = /возврат\s+оплаты/i.test(s);
+  const cardMerchantMatch = s.match(
+    /(?:оплата\s+товаров|возврат\s+оплаты[^в]*)\s+по\s+карте\s+\d+\s+сумма\s+[\d.,]+\s+в\s+(.+?)(?:\s+(?:ekaterinburg|yekaterinburg|kazan|moscow|moskva|sankt-peterbu\w*|kowloon|spb)\b|\s+(?:ru|rus|hk)\s+дата|\s+дата\s+\d|$)/i
+  );
+  if (cardMerchantMatch) {
+    const rawMerch = cardMerchantMatch[1].trim();
+    const cleanMerch = normalizeCardMerchantCode(rawMerch);
+    return isRefund ? `${cleanMerch} • Возврат средств` : cleanMerch;
+  }
+
+  // 3. Public transport via SBP ("Оплата поездки от 10.11.2026 09:22, Трамвай 7. Получатель: АО "И-СЕТЬ"")
+  const transitMatch = s.match(
+    /оплата\s+поездки[^,]*,\s*((?:трамвай|автобус|троллейбус)\s*\d+)/i
+  );
+  if (transitMatch) {
+    const vehicle = transitMatch[1].replace(/\s+/g, ' ').trim();
+    const capVehicle = vehicle.charAt(0).toUpperCase() + vehicle.slice(1).toLowerCase();
+    return `Проезд • ${capVehicle}`;
+  }
+
+  // 4. BikeBeri balance top-up
+  if (/bikeberi/i.test(s)) {
+    return 'BikeBeri • Электровелосипед';
+  }
+
+  // 5. Yandex Eda via SBP
+  if (/яндекс\s*еда/i.test(s)) {
+    return 'Яндекс Еда • Фастфуд';
+  }
+
+  // 6. Digital goods / games via SBP
+  if (/оплата\s+цифрового\s+товара/i.test(s)) {
+    return 'Цифровой товар • Игры';
+  }
+
+  // 7. Megafon payment in PDF statements (preserving Rocketbank's "Мобильная связь - Мегафон")
+  if (/услуг\s+связи.*мегафон|мегафон.*пао/i.test(s)) {
+    return 'Мегафон • Связь и Интернет';
+  }
+
+  // 8. Ekaterinburg Metro via SBP ('ЕМУП "Метрополитен"')
+  if (/метрополитен/i.test(s)) {
+    return 'Метро Екатеринбург';
+  }
+
+  // 9. Insurance VSK ('САО "ВСК"')
+  if (/сао\s*["«]?вск["»]?/i.test(s)) {
+    return 'Страхование • САО «ВСК»';
+  }
+
+  // 10. Agency / Contractor payouts ('Зачисление прочей выплаты ...')
+  if (/выплата\s+по\s+агентскому\s+договору/i.test(s)) {
+    return 'Выплата по агентскому договору';
+  }
+  if (/перечисление\s+выплаты\s+по\s+требованию\s+бенефициара/i.test(s)) {
+    return 'Выплата исполнителю по договору';
+  }
+
+  // 11. SBP P2P Incoming ('Отправитель: Вероника Алексеевна С.')
+  const senderMatch = s.match(/отправитель:\s*(.+?)(?:\.\s*без\s+ндс|\s*без\s+ндс|$)/i);
+  if (senderMatch) {
+    const sender = senderMatch[1].replace(/\.+$/, '').trim();
+    return `Перевод от: ${sender}`;
+  }
+
+  // 12. SBP Outgoing ('Получатель: ...')
+  const recipientMatch = s.match(/получатель:\s*(.+?)(?:\.\s*без\s+ндс|\s*без\s+ндс|$)/i);
+  if (recipientMatch) {
+    const recipient = recipientMatch[1]
+      .replace(/общество\s+с\s+ограниченной\s+ответственностью/gi, 'ООО')
+      .replace(/индивидуальный\s+предприниматель/gi, 'ИП')
+      .replace(/\.+$/, '')
+      .trim();
+    return `Перевод СБП • ${recipient}`;
+  }
+
+  // 13. Internal bank transfer ('Перевод клиенту Банка')
+  if (/перевод\s+клиенту\s+банка/i.test(s)) {
+    return 'Перевод клиенту Ozon Банка';
+  }
+
+  // 14. P2P Commission & Card number transfer
+  if (/комиссия\s+за\s+перевод/i.test(s)) {
+    return 'Комиссия за перевод';
+  }
+  const cardTransferMatch = s.match(/по\s+номеру\s+карты\s+\d+\*+(\d{4})/i);
+  if (cardTransferMatch) {
+    return `Перевод на карту **${cardTransferMatch[1]}`;
+  }
+  if (/ооо\s*["«]?сателлит["»]?/i.test(s)) {
+    return 'Оплата • ООО «Сателлит»';
+  }
+
+  return s;
+}
+
+function normalizeCardMerchantCode(rawMerchant: string): string {
+  const m = rawMerchant.trim();
+  if (/^lenta\b/i.test(m)) return 'Лента • Супермаркеты';
+  if (/^krasnoe\s*&\s*beloe/i.test(m)) return 'Красное & Белое';
+  if (/^magnit\b/i.test(m)) return 'Магнит • Супермаркеты';
+  if (/^pyaterochka\b|пят[её]рочка/i.test(m)) return 'Пятёрочка • Супермаркеты';
+  if (/^monetka\b|монетка/i.test(m)) return 'Монетка • Супермаркеты';
+  if (/^(?:metro\s+tpp|st\s*mashinostr|st\s*ploshhad|stploshhad|st\s*geologicheskaya)/i.test(m)) {
+    return 'Метро Екатеринбург';
+  }
+  const biletRouteMatch = m.match(
+    /(трамвай|автобус|троллейбус)(?:[,\s]+маршрут:?\s*|\s+)(\d+)/i
+  );
+  if (biletRouteMatch) {
+    const v = biletRouteMatch[1];
+    const capV = v.charAt(0).toUpperCase() + v.slice(1).toLowerCase();
+    return `Проезд • ${capV} ${biletRouteMatch[2]}`;
+  }
+  if (/^bilet\b/i.test(m)) return 'Проезд • Общественный транспорт';
+  if (/yandex.*eda/i.test(m)) return 'Яндекс Еда';
+  if (/yandex.*bike/i.test(m)) return 'Яндекс Байк';
+  if (/samokat/i.test(m)) return 'Самокат';
+  if (/telegram\s+premium/i.test(m)) return 'Telegram Premium';
+  if (/^tabak\b/i.test(m)) return 'Табак 1';
+  if (/^ervending\b/i.test(m)) return 'Ervending • Кофе и снеки';
+  if (/^pe\s+dzyryanov/i.test(m)) return 'ИП Дзырянов Д.В.';
+  if (/quattro\s+bot/i.test(m)) return 'ЮMoney • Quattro Bot';
+  return normalizeMerchantLookalikes(m);
+}
+
 function normalizeMerchantLookalikes(text: string): string {
   return text
     .replace(/^(?:оплата товаров и услуг|оплата в|покупка в)\s+/i, '')
@@ -440,6 +627,7 @@ function normalizeMerchantLookalikes(text: string): string {
     .replace(/(^|\s)(?:вкусвилл|vkusvill)(?=\s|$|[•.,])/gi, '$1ВкусВилл')
     .replace(/(^|\s)красное\s*[&и]\s*белое(?=\s|$|[•.,])/gi, '$1Красное & Белое')
     .replace(/(^|\s)(?:магнит|magnit)(?=\s|$|[•.,])/gi, '$1Магнит')
+    .replace(/(^|\s)(?:монетка|monetka)(?=\s|$|[•.,])/gi, '$1Монетка')
     .replace(/(^|\s)vita\s*apteka(?:\s+\d+)?/gi, '$1Vita Apteka')
     .replace(/^(?:[a-zA-Zа-яА-ЯёЁ0-9$¢©®@()]+\s+)*с\s+моего\s+сч[её]та/i, 'С моего счёта')
     .replace(/^(?:©\s+|с\s+)?моего\s+сч[её]та/i, 'С моего счёта')
@@ -447,7 +635,8 @@ function normalizeMerchantLookalikes(text: string): string {
 }
 
 function cleanOcrLineNoise(raw: string): string {
-  const cleaned = raw
+  const formatted = formatBankStatementDescription(raw);
+  const cleaned = formatted
     .replace(/(?:карта|card)?\s*[*•·]{1,4}\s*\d{3,4}/gi, ' ')
     .replace(/код\s+авторизации:?\s*[a-zA-Z0-9]+/gi, ' ')
     .replace(/\b(?:CRD|C2C|SBP|TRN|DOC)_[A-Z0-9]+\b/gi, ' ')
@@ -529,7 +718,7 @@ export function reconstructPdfRowsFromItems(
         .replace(/\s+/g, ' ')
         .trim();
     })
-    .filter((line) => line.length >= 2);
+    .filter((line) => line.length >= 1);
 }
 
 function parseRussianDateHeader(line: string, referenceDate: Date): string | null {
@@ -596,6 +785,29 @@ function extractCanonicalBankSubtitle(line: string): string | null {
   return null;
 }
 
+/**
+ * Checks if a line is the top anchor line of a tabular PDF bank statement transaction row.
+ * E.g. "12.11.2026 10:35:56 1504634957 Оплата товаров/услуг - 973.38 ₽ - 973.38 ₽"
+ * or "13.11.2026 19:42 13.11.2026 -1 480,00 ₽ -1 480,00 ₽ Оплата в Пятёрочка 4377"
+ */
+function isTabularDatedAnchorLine(line: string): boolean {
+  // Must start with DD.MM.YYYY (or YYYY-MM-DD) and optional HH:MM(:SS), NOT followed by a comma (like "10.11.2026 09:22, Трамвай")
+  if (
+    !/^(?:\d{2}\.\d{2}\.\d{2,4}|\d{4}-\d{2}-\d{2})(?:\s+\d{2}:\d{2}(?::\d{2})?)?\s+(?![,а-яё])/i.test(
+      line
+    )
+  ) {
+    return false;
+  }
+  const strippedDates = line
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, ' ')
+    .replace(/\b\d{2}\.\d{2}\.\d{2,4}\b/g, ' ')
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, ' ');
+  return /(?:^|\s)[+−-]\s*\d[\d\s\u00A0]*(?:[.,]\d{1,2})?\s*(?:₽|руб|р\.?|p|\$|€|₸)|\b\d[\d\s\u00A0]*[.,]\d{2}\b/i.test(
+    strippedDates
+  );
+}
+
 export function parseBankStatementText(
   rawText: string,
   categories: Category[],
@@ -605,14 +817,73 @@ export function parseBankStatementText(
   const rawLines = rawText
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter((l) => l.length >= 2);
+    .filter((l) => l.length >= 1);
+
+  // Detect if the text is a multi-line tabular PDF bank statement (e.g. Ozon Bank / Sberbank / T-Bank PDF)
+  // where each transaction row starts with a date+time and has wrapped description lines underneath it.
+  const anchorCount = rawLines.filter((l) => isTabularDatedAnchorLine(l)).length;
+  const isTabularStatement = anchorCount >= 2;
+
+  const preparedRows: { headLine: string; continuationDesc: string }[] = [];
+
+  if (isTabularStatement) {
+    let currentGroup: { headLine: string; contLines: string[] } | null = null;
+
+    for (const line of rawLines) {
+      if (isTabularDatedAnchorLine(line)) {
+        if (currentGroup) {
+          preparedRows.push({
+            headLine: currentGroup.headLine,
+            continuationDesc: currentGroup.contLines.join(' '),
+          });
+        }
+        currentGroup = { headLine: line, contLines: [] };
+      } else if (currentGroup) {
+        // Skip standalone page numbers (e.g. "1", "24") and PDF footer/summary lines
+        if (
+          /^(?:\d{1,3}$|итого\s|всего\s|исходящий\s+остаток|входящий\s+остаток|остаток\s+на|с\s+уважением|руководитель|ооо\s|справка\s+о\s+движении|дата\s+операции|сумма\s+операции|российские\s+рубли)/i.test(
+            line
+          )
+        ) {
+          if (/^(?:итого\s|всего\s|исходящий\s+остаток|с\s+уважением)/i.test(line)) {
+            preparedRows.push({
+              headLine: currentGroup.headLine,
+              continuationDesc: currentGroup.contLines.join(' '),
+            });
+            currentGroup = null;
+          }
+          continue;
+        }
+        // Strip single wrapped digit from the 11-digit Document column (e.g. "9 на Платформе Ozon,")
+        const cleanedCont =
+          currentGroup.contLines.length === 0
+            ? line.replace(/^\d\s+/, '')
+            : line;
+        currentGroup.contLines.push(cleanedCont);
+      }
+    }
+
+    if (currentGroup) {
+      preparedRows.push({
+        headLine: currentGroup.headLine,
+        continuationDesc: currentGroup.contLines.join(' '),
+      });
+    }
+  } else {
+    for (const line of rawLines) {
+      if (line.length >= 2) {
+        preparedRows.push({ headLine: line, continuationDesc: '' });
+      }
+    }
+  }
 
   const drafts: ScannedTransactionDraft[] = [];
   let currentSectionDate = todayISO;
   let skipNextSummaryTotalsLine = false;
 
-  for (let i = 0; i < rawLines.length; i++) {
-    const line = normalizeRocketbankWideFontLine(rawLines[i]);
+  for (let i = 0; i < preparedRows.length; i++) {
+    const { headLine, continuationDesc } = preparedRows[i];
+    const line = normalizeRocketbankWideFontLine(headLine);
     const lowerLine = line.toLowerCase();
 
     // 1. Skip phone status bar lines, Rocketbank header ("ЭЙ, РОКИ"), cashback bonus sublines ("РАЛЛИБУСТ 6,66%"), or PDF statement metadata/totals
@@ -621,7 +892,7 @@ export function parseBankStatementText(
       /раллибуст|\d+[.,]\d+%\s+\d+[.,]\d+%|эй,\s*роки|рок!\s*0|^—\s*f-1|^\[3\]|^hh\s+onna/i.test(
         lowerLine
       ) ||
-      /выписка по сч|справка о движении|за период с|дата формирования|входящий остаток|исходящий остаток|остаток на начало|остаток на конец|всего списаний|всего пополнений|всего поступлений|итого по операциям|сумма в валюте|дата и время операции|страница\s+\d+|продолжение на следующей|\b(?:408|423|301|302)\d{17}\b|\bбик\s*\d{9}\b/i.test(
+      /выписка по сч|справка о движении|№\s*ф-\d{4}|владелец:|номер лицевого|дата и время формирования|период выписки|валюта:\s*российский|за период с|дата формирования|входящий остаток|исходящий остаток|остаток на начало|остаток на конец|всего списаний|всего пополнений|всего поступлений|итого зачислений|итого списаний|итого по операциям|сумма в валюте|дата и время операции|страница\s+\d+|продолжение на следующей|\b(?:408|409|423|301|302)\d{17}\b|\bбик\s*\d{9}\b|\bинн\/кпп\b|лицензия банка/i.test(
         lowerLine
       ) ||
       /^(?:операции|история|все операции|счёт|фильтр|без переводов|код авторизации)/i.test(
@@ -639,7 +910,6 @@ export function parseBankStatementText(
 
     if (skipNextSummaryTotalsLine) {
       skipNextSummaryTotalsLine = false;
-      // If this line has no explicit +/- signs (or has 2 separate totals like "10 875Р 10 908Р"), skip it
       const hasExplicitSign = /(?:^|\s)[+−-]\s*\d/.test(line);
       if (!hasExplicitSign) {
         continue;
@@ -653,8 +923,11 @@ export function parseBankStatementText(
       continue;
     }
 
-    // 4. Check if this line is a bank category subtitle for the previous transaction
-    const canonicalSubtitle = drafts.length > 0 ? extractCanonicalBankSubtitle(line) : null;
+    // 4. Check if this line is a bank category subtitle for the previous transaction (only in non-tabular screenshot mode)
+    const canonicalSubtitle =
+      !isTabularStatement && drafts.length > 0
+        ? extractCanonicalBankSubtitle(line)
+        : null;
     if (canonicalSubtitle) {
       const prev = drafts[drafts.length - 1];
       if (!prev.note.toLowerCase().includes(canonicalSubtitle.toLowerCase())) {
@@ -663,7 +936,6 @@ export function parseBankStatementText(
         prev.note = combinedNote;
         if (rematched.confidence === 'high') {
           prev.categoryId = rematched.categoryId;
-          // Preserve explicit '+' or '-' sign from the transaction line unless subtitle strongly confirms income
           if (
             rematched.type === 'income' &&
             /пополнен|зачислен|перевод от|зарплат|кэшбэк/i.test(canonicalSubtitle)
@@ -671,7 +943,6 @@ export function parseBankStatementText(
             prev.type = 'income';
           }
         }
-        // Ensure category type matches transaction type
         const catObj = categories.find((c) => c.id === prev.categoryId);
         if (!catObj || catObj.type !== prev.type) {
           const fallbackCat =
@@ -688,7 +959,7 @@ export function parseBankStatementText(
 
     // 5. Check explicit inline date DD.MM.YYYY or YYYY-MM-DD
     let detectedDate = currentSectionDate;
-    const ruDateMatch = line.match(/\b(\d{2})\.(\d{2})(?:\.(\d{2,4}))?\b/);
+    const ruDateMatch = line.match(/\b(\d{2})\.(\d{2})\.(\d{2,4})\b/);
     const isoDateMatch = line.match(/\b(\d{4}-\d{2}-\d{2})\b/);
     const hasInlineDate = Boolean(isoDateMatch || ruDateMatch);
 
@@ -697,21 +968,22 @@ export function parseBankStatementText(
     } else if (ruDateMatch) {
       const dd = ruDateMatch[1];
       const mm = ruDateMatch[2];
-      let yyyy = ruDateMatch[3] ? ruDateMatch[3] : String(referenceDate.getFullYear());
+      let yyyy = ruDateMatch[3];
       if (yyyy.length === 2) yyyy = `20${yyyy}`;
       detectedDate = `${yyyy}-${mm}-${dd}`;
     }
 
-    // Remove inline dates, times (including HH:MM:SS), and card masks (**1431) before extracting monetary amount
+    // Remove inline dates, times (including HH:MM:SS), card masks (**1431), and 9-12 digit PDF Document IDs before extracting monetary amount
     const lineForAmount = line
       .replace(/(?:карта|card)?\s*[*•·]{1,4}\s*\d{3,4}/gi, ' ')
       .replace(/\b\d{4}-\d{2}-\d{2}\b/g, ' ')
-      .replace(/\b\d{2}\.\d{2}(?:\.\d{2,4})?\b/g, ' ')
-      .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, ' ');
+      .replace(/\b\d{2}\.\d{2}\.\d{2,4}\b/g, ' ')
+      .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, ' ')
+      .replace(/\b\d{9,12}\b/g, ' ');
 
-    // Match amounts with currency or explicit +/- sign (or 2-decimal PDF column amounts on dated rows).
+    // Match amounts with currency or explicit +/- sign (requiring whitespace/start boundary before sign/digits so hyphenated IDs like "86421454-0076" or "AD1P107" are never matched).
     const amountRegex =
-      /([+−-])?\s*(\d{1,3}(?:[\s\u00A0]\d{3})+|\d+)(?:[.,](\d{1,2}))?\s*(₽|руб\.?|р\.?|rub|ор|р|p|\$|€|₸|byn)?/gi;
+      /(?<=^|[\s\u00A0])([+−-])?\s*(\d{1,3}(?:[\s\u00A0]\d{3})+|\d+)(?:[.,](\d{1,2}))?\s*(₽|руб\.?|р\.?|rub|ор|р|p|\$|€|₸|byn)?(?=$|[\s\u00A0.,;!)])/gi;
 
     const allMatches = Array.from(lineForAmount.matchAll(amountRegex)).filter((m) => {
       const sign = m[1] || '';
@@ -719,13 +991,12 @@ export function parseBankStatementText(
       const currency = m[4] || '';
       const rawDigits = (m[2] || '').replace(/[\s\u00A0]+/g, '');
       if (!rawDigits || Number(rawDigits) <= 0) return false;
-      // Accept if it has an explicit +/- sign, a currency unit, OR is a dated PDF table row with 2 decimal places (e.g. "1 450,00")
       return Boolean(sign || currency || (hasInlineDate && dec.length === 2));
     });
 
     if (allMatches.length === 0) continue;
 
-    // Skip lines that look like dual summary widgets (2+ unsigned currency totals with DIFFERENT values on a line without a date)
+    // Skip lines that look like dual summary widgets (2+ unsigned currency totals on a line without a date)
     if (
       !hasInlineDate &&
       allMatches.length >= 2 &&
@@ -734,7 +1005,7 @@ export function parseBankStatementText(
       continue;
     }
 
-    // Pick the best monetary match (prefer one with both sign & currency, or at end of line)
+    // Pick the best monetary match (prefer one with both sign & currency, or decimals)
     const bestMatch = allMatches.reduce((best, cur) => {
       const curScore = (cur[1] ? 2 : 0) + (cur[4] ? 2 : 0) + (cur[3] ? 1 : 0);
       const bestScore = (best[1] ? 2 : 0) + (best[4] ? 2 : 0) + (best[3] ? 1 : 0);
@@ -754,7 +1025,7 @@ export function parseBankStatementText(
 
     if (!numericAmount || numericAmount <= 0 || numericAmount > 100_000_000) continue;
 
-    // Extract merchant / note text, removing duplicate amount columns (e.g. T-Bank PDF statements print amount in op currency and account currency)
+    // Extract merchant / note text, removing duplicate amount columns
     let rawNote = lineForAmount;
     for (const m of allMatches) {
       const mInt = (m[2] || '').replace(/[\s\u00A0]+/g, '');
@@ -765,7 +1036,11 @@ export function parseBankStatementText(
       }
     }
 
-    const cleanedNote = cleanOcrLineNoise(rawNote);
+    const fullRawDescription = continuationDesc
+      ? `${rawNote} ${continuationDesc}`
+      : rawNote;
+
+    const cleanedNote = cleanOcrLineNoise(fullRawDescription);
     const noteText = cleanedNote || 'Операция по карте';
 
     const matched = matchCategoryByMerchant(noteText, categories);
@@ -777,7 +1052,9 @@ export function parseBankStatementText(
       !hasMinusSign &&
       (hasPlusSign ||
         matched.type === 'income' ||
-        /пополнение|зачисление|зарплата|перевод от|кэшбэк|входящий перевод/i.test(noteText));
+        /пополнение|зачисление|зарплата|перевод от|кэшбэк|входящий перевод|возврат средств/i.test(
+          noteText
+        ));
 
     const finalType: TransactionType = isExplicitIncome ? 'income' : 'expense';
     let finalCategoryId = matched.categoryId;
@@ -873,16 +1150,36 @@ export const BANK_SCREENSHOT_PRESETS: {
   },
   {
     id: 'preset_pdf',
-    bankName: 'PDF-выписка (Сбер / Т-Банк)',
-    subtitle: 'Табличная выписка по счёту с датами, временем и кодами карт',
+    bankName: 'PDF-выписка (Ozon / Сбер / Т-Банк)',
+    subtitle: 'Многострочная табличная выписка по счёту с номерами документов и СБП',
     rawStatement: [
-      'Выписка по счёту дебетовой карты за период с 01.11.2026 по 14.11.2026',
-      'Входящий остаток 45 200,00 ₽ Исходящий остаток 98 410,00 ₽',
-      '13.11.2026 19:42 13.11.2026 -1 480,00 ₽ -1 480,00 ₽ Оплата в Пятёрочка 4377',
-      '13.11.2026 14:15 13.11.2026 -1 011,00 ₽ -1 011,00 ₽ VITA APTEKA 3930 4377',
-      '12.11.2026 11:20 12.11.2026 +65 000,00 ₽ +65 000,00 ₽ Зачисление заработной платы 4377',
-      '11.11.2026 21:05 11.11.2026 -2 294,00 ₽ -2 294,00 ₽ Сервисы Яндекса 4377',
-      '10.11.2026 08:30 10.11.2026 -690,00 ₽ -690,00 ₽ Яндекс Go Такси 4377',
+      'Справка о движении средств',
+      '№ Ф-2026-39706250 от «14» ноября 2026 года',
+      'Входящий остаток: 229.35 ₽',
+      '12.11.2026 10:35:56 1504634957 Оплата товаров/услуг - 973.38 ₽ - 973.38 ₽',
+      '9 на Платформе Ozon,',
+      'заказ № 86421454-0076.',
+      'Без НДС.',
+      '12.11.2026 10:35:22 1007892668 Перевод клиенту Банка. + 980.00 ₽ + 980.00 ₽',
+      '5 НДС не облагается.',
+      '11.11.2026 15:23:34 1006591683 Перевод - 2 294.00 ₽ - 2 294.00 ₽',
+      '0 AD1P107FLRE5G55Q8IAQ',
+      'I0SKR6D9DLCU через',
+      'СБП. Яндекс Еда',
+      '6af45e2a226762720112de',
+      '75. Получатель: АО',
+      '"ЯНДЕКС БАНК". Без',
+      'НДС.',
+      '11.11.2026 15:22:53 1006590257 Перевод + 2 300.00 ₽ + 2 300.00 ₽',
+      '0 B63151222483460T0B1013',
+      '0011890301 через СБП.',
+      'Отправитель: Вероника',
+      'Алексеевна С. Без НДС.',
+      '10.11.2026 17:21:59 1500022904 Оплата товаров по - 619.98 ₽ - 619.98 ₽',
+      '3 карте 1431 сумма 619.98',
+      'в LENTA-368',
+      'Ekaterinburg RU дата',
+      '2026-11-10 время 19:21:57',
     ].join('\n'),
   },
 ];
@@ -900,15 +1197,12 @@ async function extractPdfStatementData(
   const pdfjsLib = await import('pdfjs-dist');
 
   if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.min.mjs',
-      import.meta.url
-    ).toString();
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
   }
 
   const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
   const pdfDoc = await loadingTask.promise;
-  const maxPages = Math.min(pdfDoc.numPages, 15);
+  const maxPages = Math.min(pdfDoc.numPages, 100);
   const allRows: string[] = [];
   let previewDataUrl: string | undefined;
 
@@ -1067,9 +1361,24 @@ export async function analyzeBankScreenshotImage(
         await extractPdfStatementData(file, onProgress);
 
       if (extractedText.length > 0) {
-        // 1. Try server-side Gemini AI if configured
+        onProgress?.('Анализ таблицы операций и распределение по категориям...');
+
+        // 1. Built-in Deterministic PDF Table Parser — parses all pages (180+ rows) instantaneously without token truncation
+        const parsedDrafts = parseBankStatementText(extractedText, categories);
+        if (parsedDrafts.length > 0) {
+          return {
+            source: 'pdf_parser',
+            drafts: parsedDrafts,
+            recognizedText: extractedText,
+            previewDataUrl,
+            isPdf: true,
+            pageCount,
+            message: `PDF-выписка (${pageCount} стр.) успешно прочитана: найдено операций — ${parsedDrafts.length}. Проверьте суммы и категории перед сохранением.`,
+          };
+        }
+
+        // 2. Fallback to server-side Gemini AI if non-standard layout yielded 0 rows locally
         try {
-          onProgress?.('Анализ строк PDF-выписки и распределение по категориям...');
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 14000);
 
@@ -1144,21 +1453,7 @@ export async function analyzeBankScreenshotImage(
             }
           }
         } catch {
-          // Proceed to built-in local PDF statement parser
-        }
-
-        // 2. Built-in Local PDF Table Parser (works 100% offline/client-side without API keys)
-        const parsedDrafts = parseBankStatementText(extractedText, categories);
-        if (parsedDrafts.length > 0) {
-          return {
-            source: 'pdf_parser',
-            drafts: parsedDrafts,
-            recognizedText: extractedText,
-            previewDataUrl,
-            isPdf: true,
-            pageCount,
-            message: `PDF-выписка (${pageCount} стр.) успешно прочитана: найдено операций — ${parsedDrafts.length}. Проверьте суммы и категории перед сохранением.`,
-          };
+          // Ignore network error
         }
       }
 

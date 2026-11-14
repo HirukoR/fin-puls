@@ -479,3 +479,110 @@ test('reconstructPdfRowsFromItems and parseBankStatementText parse multi-column 
   );
 });
 
+test('parseBankStatementText parses Ozon Bank multi-line PDF statement without false-positive document or order IDs', () => {
+  const ozonPdfRawText = [
+    'Справка о движении денежных средств',
+    '№ Ф-2026-39706250 от «14» ноября 2026 года',
+    'Дата операции Документ Назначение платежа Сумма операции',
+    '12.11.2026 10:35:56 1504634957 Оплата товаров/услуг - 973.38 ₽ - 973.38 ₽',
+    '9 на Платформе Ozon,',
+    'заказ № 86421454-0076.',
+    'Без НДС.',
+    '11.11.2026 15:23:34 1006591683 Перевод - 2 294.00 ₽ - 2 294.00 ₽',
+    '0 AD1P107FLRE5G55Q8IAQ',
+    'I0SKR6D9DLCU через',
+    'СБП. Яндекс Еда',
+    '6af45e2a226762720112de',
+    '75. Получатель: АО',
+    '"ЯНДЕКС БАНК". Без',
+    'НДС.',
+    '11.11.2026 15:22:53 1006590257 Перевод + 2 300.00 ₽ + 2 300.00 ₽',
+    '0 B63151222483460T0B1013',
+    '0011890301 через СБП.',
+    'Отправитель: Вероника',
+    'Алексеевна С. Без НДС.',
+    '10.11.2026 17:21:59 1500022904 Оплата товаров по - 619.98 ₽ - 619.98 ₽',
+    '3 карте 1431 сумма 619.98',
+    'в LENTA-368',
+    'Ekaterinburg RU дата',
+    '2026-11-10 время 19:21:57',
+    '10.11.2026 09:23:06 1497518393 Оплата товаров по - 42.00 ₽ - 42.00 ₽',
+    '0 карте 1582 сумма 42.00',
+    'в BILET 10.11.2026 09:22,',
+    'Трамвай, маршрут: 7',
+    'Ekaterinburg RU',
+    '07.11.2026 11:02:13 1001431188 Зачисление прочей + 2 848.00 ₽ + 2 848.00 ₽',
+    '7 выплаты',
+    'B63110802077642Z0B1013',
+    '0011460702 через СБП.',
+    'Перечисление выплаты',
+    'по Требованию',
+    'бенефициара ИНН',
+    '7704357909 в адрес',
+    'исполнителя. Без НДС.',
+    'Итого зачислений: 68 431.01 ₽',
+    'Итого списаний: 68 626.82 ₽',
+  ].join('\n');
+
+  const parsed = parseBankStatementText(
+    ozonPdfRawText,
+    DEFAULT_CATEGORIES,
+    new Date('2026-11-14T16:10:00')
+  );
+
+  assert.equal(parsed.length, 6);
+  assert.deepEqual(
+    parsed.map((p) => ({
+      type: p.type,
+      amount: p.amount,
+      categoryId: p.categoryId,
+      date: p.date,
+      note: p.note,
+    })),
+    [
+      {
+        type: 'expense',
+        amount: 973,
+        categoryId: 'cat_marketplaces',
+        date: '2026-11-12',
+        note: 'Ozon • Заказ № 86421454-0076',
+      },
+      {
+        type: 'expense',
+        amount: 2294,
+        categoryId: 'cat_food',
+        date: '2026-11-11',
+        note: 'Яндекс Еда • Фастфуд',
+      },
+      {
+        type: 'income',
+        amount: 2300,
+        categoryId: 'cat_gifts',
+        date: '2026-11-11',
+        note: 'Перевод от: Вероника Алексеевна С',
+      },
+      {
+        type: 'expense',
+        amount: 620,
+        categoryId: 'cat_food',
+        date: '2026-11-10',
+        note: 'Лента • Супермаркеты',
+      },
+      {
+        type: 'expense',
+        amount: 42,
+        categoryId: 'cat_transport',
+        date: '2026-11-10',
+        note: 'Проезд • Трамвай 7',
+      },
+      {
+        type: 'income',
+        amount: 2848,
+        categoryId: 'cat_freelance',
+        date: '2026-11-07',
+        note: 'Выплата исполнителю по договору',
+      },
+    ]
+  );
+});
+
