@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method Not Allowed' });
     return;
@@ -17,7 +17,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
-    const { summaryPrompt } = body as { summaryPrompt?: string };
+    const { summaryPrompt } = body;
     if (!summaryPrompt) {
       res.status(400).json({ error: 'Missing summaryPrompt' });
       return;

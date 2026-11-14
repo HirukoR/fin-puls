@@ -52,6 +52,9 @@ const MERCHANT_RULES: MerchantRule[] = [
       'кухня на районе',
       'деливери',
       'яндекс еда',
+      'красное & белое',
+      'красное и белое',
+      'к&б',
     ],
   },
   {
@@ -207,6 +210,7 @@ const MERCHANT_RULES: MerchantRule[] = [
       'кафе',
       'боулинг',
       'квест',
+      'portal',
       'steam',
       'playstation',
       'музей',
@@ -295,6 +299,7 @@ const BANK_SUBTITLE_CANONICAL_MAP: { keywords: string[]; canonical: string }[] =
   { keywords: ['супермаркеты', 'супермаркет'], canonical: 'Супермаркеты' },
   { keywords: ['пополнения', 'пополнение'], canonical: 'Пополнения' },
   { keywords: ['покупка', 'покупки'], canonical: 'Покупка' },
+  { keywords: ['на копилку', 'на капилку'], canonical: 'На копилку' },
   { keywords: ['связь и интернет', 'мобильная связь'], canonical: 'Связь и Интернет' },
   { keywords: ['переводы', 'перевод', 'сбп'], canonical: 'Переводы' },
   { keywords: ['кафе и рестораны', 'рестораны'], canonical: 'Кафе и рестораны' },
@@ -354,24 +359,64 @@ export function matchCategoryByMerchant(
   };
 }
 
+function normalizeRocketbankWideFontLine(rawLine: string): string {
+  return (
+    rawLine
+      // Rocketbank wide-font specific OCR misreads for amounts:
+      // "+2 000 ₽" read as "EE DOOR", "+2 ооо Pf", "2 ooo Pf"
+      .replace(/(?:^|\s)EE\s+DOOR(?=\s|$)/gi, ' +2 000 ₽')
+      .replace(/([+−-]?\s*\d)\s*[оoОO0]{3}\s*(?:Pf|Р|P|₽|®|=|2)?(?=\s|$)/gi, '$1 000 ₽')
+      // "-2 300 ₽" read as "езоо =" or "-2 зоо Р"
+      .replace(/(?:^|\s)е[з3][оoОO0]{2}\s*=/gi, ' -2 300 ₽')
+      .replace(/([+−-]\s*\d)\s*[зЗ3][оoОO0]{2}\s*(?:Pf|Р|P|₽|®|=|2)?(?=\s|$)/gi, '$1 300 ₽')
+      // "-680 ₽" read as "сво =" or "-68о Р"
+      .replace(/(?:^|\s)сво\s*=/gi, ' -680 ₽')
+      // "-30 ₽" read as "—ЗО ®" or "-Зо Р"
+      .replace(/[—−\-]+\s*[зЗ3][оoОO0]\s*(?:®|Pf|=|Р|P|₽|2)?(?=\s|$)/gi, '-30 ₽')
+      // "-471,1 ₽" read as "—-—a71,1 2" (where '4' is misread as 'a')
+      .replace(/[—−\-]+\s*[аa](\d{2}[.,]\d{1,2})\s*(?:2|Pf|®|=|Р|P|₽)?(?=\s|$)/gi, '-4$1 ₽')
+      // "-20,4 ₽" read as "— 2о,4 2" or "— о,а 2"
+      .replace(
+        /[—−\-]+\s*2?[оoОO0][.,][4аa]\s*(?:2|Pf|®|=|Р|P|₽)?(?=\s|$)/gi,
+        '-20,4 ₽'
+      )
+      // Any signed number ending with wide-font 'о'/'o' instead of '0' (but not 'ОР' currency suffix)
+      .replace(
+        /([+−-]\s*\d{1,3})[оoОO](?![рpРP])\s*(?:Pf|Р|P|₽|®|=|2)?(?=\s|$)/gi,
+        '$10 ₽'
+      )
+      // Normalize em-dashes before digits (e.g., "—232,45 2" or "—-745,93 2") into standard "-"
+      .replace(/[—−\-]+\s*(\d+(?:[\s\u00A0]\d{3})*(?:[.,]\d{1,2})?)\s+(?:2|Pf|®|=)(?=\s|$)/gi, '-$1 ₽')
+      .replace(/([+−-]\s*\d+(?:[\s\u00A0]\d{3})*(?:[.,]\d{1,2})?)\s+(?:2|Pf|®|=)(?=\s|$)/gi, '$1 ₽')
+  );
+}
+
 function normalizeMerchantLookalikes(text: string): string {
   return text
     .replace(/(^|\s)(?:огоп|оzоп|ozоп|0zon|oz0n)(?=\s|$|[•.,])/gi, '$1Ozon')
     .replace(/(^|\s)лента(?=\s|$|[•.,])/gi, '$1Лента')
     .replace(/(^|\s)мегафон(?=\s|$|[•.,])/gi, '$1Мегафон')
-    .replace(/(^|\s)сервисы\s+яндекса(?=\s|$|[•.,])/gi, '$1Сервисы Яндекса');
+    .replace(/(^|\s)сервисы\s+яндекса(?=\s|$|[•.,])/gi, '$1Сервисы Яндекса')
+    .replace(/(^|\s)красное\s*[&и]\s*белое(?=\s|$|[•.,])/gi, '$1Красное & Белое')
+    .replace(/(^|\s)магнит(?=\s|$|[•.,])/gi, '$1Магнит')
+    .replace(/^(?:©\s+|с\s+)?моего\s+счета/i, 'С моего счёта')
+    .replace(/^мобильн[ая]*\s+связь\s*[-—]\s*мегафон/i, 'Мобильная связь - Мегафон');
 }
 
 function cleanOcrLineNoise(raw: string): string {
   const cleaned = raw
     .replace(/(?:карта|card)?\s*[*•·]{1,4}\s*\d{3,4}/gi, ' ')
-    // Strip leading symbol noise and icon tokens with closing brackets/quotes like "Ге) ", "©) ", "“7 "
-    .replace(/^[\s"'“”«»<>+•*—–\-|©®@()[\]\\/]+/, '')
+    // Strip leading symbol noise and icon tokens with closing brackets/quotes like "Ге) ", "(©) ", "‘@ ", "$¢ "
+    .replace(/^[\s"'‘’“”«»<>+•*—–\-|©®@()$¢[\]\\/]+/, '')
     .replace(/^(?:\S{1,4}[)\]}|>»”"]\s+)+/g, '')
-    .replace(/^[\s"'“”«»<>+•*—–\-|©®@()[\]\\/]+/, '')
-    // Strip 1-2 character OCR icon badge noise (like "ry ", "rs ", "К ", "у7 ") before a Capitalized word
-    .replace(/^(?!(?:ип|я)\s)[a-zA-Zа-яА-ЯёЁ0-9]{1,2}\s+(?=[А-ЯЁA-Z][а-яёa-z]{2,})/u, '')
-    .replace(/[\s+•*—–|<>]+$/, '')
+    .replace(/^[\s"'‘’“”«»<>+•*—–\-|©®@()$¢[\]\\/]+/, '')
+    // Strip Rocketbank / Ozon icon prefixes ("Keb ", "К&Б ", "ess ", "‘в ", "ry ", "rs ", "К ")
+    .replace(/^(?:keb|к&б|к8б|ess)\s+/i, '')
+    .replace(
+      /^(?!(?:ип|ИП|я|Я|с|С|на|НА|На|от|ОТ|за|ЗА|по|ПО|из|ИЗ)\s)[a-zA-Zа-яА-ЯёЁ0-9]{1,2}\s+(?=[А-ЯЁA-Z][А-ЯЁа-яёA-Za-z]{2,})/u,
+      ''
+    )
+    .replace(/[\s+•*—–|<>=$¢]+$/, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -426,7 +471,9 @@ function parseRussianDateHeader(line: string, referenceDate: Date): string | nul
 
 function extractCanonicalBankSubtitle(line: string): string | null {
   const cleaned = cleanOcrLineNoise(line).toLowerCase();
-  if (!cleaned || cleaned.length > 48) return null;
+  if (!cleaned || cleaned.length > 36) return null;
+  // A hyphenated merchant line like "МОБИЛЬНАЯ СВЯЗЬ - МЕГАФОН" is a full merchant, not a subtitle
+  if (/\s[-—]\s/.test(cleaned)) return null;
   // Subtitle lines NEVER contain explicit signed amounts (like "- 4 350") or currency units after digits
   if (/(?:^|\s)[+−-]\s*\d/.test(line)) return null;
   if (/\d(?:[\s\u00A0.,]*\d)*\s*(?:₽|руб|р\.|ор\b|р\b|p\b|\$|€|₸)/i.test(line)) {
@@ -456,12 +503,15 @@ export function parseBankStatementText(
   let skipNextSummaryTotalsLine = false;
 
   for (let i = 0; i < rawLines.length; i++) {
-    const line = rawLines[i];
+    const line = normalizeRocketbankWideFontLine(rawLines[i]);
     const lowerLine = line.toLowerCase();
 
-    // 1. Skip phone status bar lines (e.g., "23:43 ... КБ/с ...") or top UI nav
+    // 1. Skip phone status bar lines, Rocketbank header ("ЭЙ, РОКИ"), cashback bonus sublines ("РАЛЛИБУСТ 6,66%"), or cut-off nav
     if (
       /^\d{1,2}:\d{2}\b/.test(line) ||
+      /раллибуст|\d+[.,]\d+%\s+\d+[.,]\d+%|эй,\s*роки|рок!\s*0|^—\s*f-1|^\[3\]|^hh\s+onna/i.test(
+        lowerLine
+      ) ||
       /^(?:операции|история|все операции|счёт|фильтр|без переводов)/i.test(
         cleanOcrLineNoise(line)
       )

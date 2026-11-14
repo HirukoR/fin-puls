@@ -235,3 +235,97 @@ test('parseBankStatementText parses multi-line Ozon Bank OCR screenshot output a
   );
 });
 
+test('parseBankStatementText parses Rocketbank wide-font OCR output accurately', () => {
+  const rocketOcrLines = [
+    '23:59 ® НЙ 79 7',
+    '6% an, РОК! 0',
+    '‘@ АНТОН Е. +2 ooo Pf',
+    'Keb КРАСНОЕ & БЕЛОЕ —-—a71,1 2',
+    'РАЛЛИБУСТ 6,66% 6,66% +31₽',
+    '@ МАГНИТ —-745,93 2',
+    'Keb КРАСНОЕ & БЕЛОЕ —232,45 2',
+    '$¢ — © МОЕГО СЧЕТА — 2о,4 2',
+    '$ НА КАПИЛКУ',
+    '11 ноября',
+    '‘в ТИМУР С. езоо =',
+    '(©) моБильня связь - мегафон —ЗО ®',
+    'ess PORTAL сво =',
+  ].join('\n');
+
+  const parsed = parseBankStatementText(
+    rocketOcrLines,
+    DEFAULT_CATEGORIES,
+    new Date('2026-11-14T15:00:00')
+  );
+
+  assert.equal(parsed.length, 8);
+  assert.deepEqual(
+    parsed.map((p) => ({
+      type: p.type,
+      amount: p.amount,
+      categoryId: p.categoryId,
+      date: p.date,
+      note: p.note,
+    })),
+    [
+      {
+        type: 'income',
+        amount: 2000,
+        categoryId: 'cat_gifts',
+        date: '2026-11-14',
+        note: 'АНТОН Е.',
+      },
+      {
+        type: 'expense',
+        amount: 471,
+        categoryId: 'cat_food',
+        date: '2026-11-14',
+        note: 'Красное & Белое',
+      },
+      {
+        type: 'expense',
+        amount: 746,
+        categoryId: 'cat_food',
+        date: '2026-11-14',
+        note: 'Магнит',
+      },
+      {
+        type: 'expense',
+        amount: 232,
+        categoryId: 'cat_food',
+        date: '2026-11-14',
+        note: 'Красное & Белое',
+      },
+      {
+        type: 'expense',
+        amount: 20,
+        categoryId: 'cat_other',
+        date: '2026-11-14',
+        note: 'С моего счёта • На копилку',
+      },
+      {
+        type: 'expense',
+        amount: 2300,
+        categoryId: 'cat_other',
+        date: '2026-11-11',
+        note: 'ТИМУР С.',
+      },
+      {
+        type: 'expense',
+        amount: 30,
+        categoryId: 'cat_subscriptions',
+        date: '2026-11-11',
+        note: 'Мобильная связь - Мегафон',
+      },
+      {
+        type: 'expense',
+        amount: 680,
+        categoryId: 'cat_entertainment',
+        date: '2026-11-11',
+        note: 'PORTAL',
+      },
+    ]
+  );
+});
+
+

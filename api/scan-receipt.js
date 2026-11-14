@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 
-export default async function handler(req: any, res: any) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method Not Allowed' });
     return;
@@ -17,11 +17,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
-    const { imageBase64, mimeType, categories } = body as {
-      imageBase64?: string;
-      mimeType?: string;
-      categories?: { id: string; name: string; type: string }[];
-    };
+    const { imageBase64, mimeType, categories } = body;
 
     if (!imageBase64) {
       res.status(400).json({ error: 'Missing imageBase64' });
@@ -53,7 +49,7 @@ export default async function handler(req: any, res: any) {
             },
           },
           {
-            text: `Распознай все отдельные банковские операции или позиции чека на этом скриншоте (игнорируй общие виджеты итогов за месяц в шапке вроде "Расходы 10 875 ₽ / Доходы 10 908 ₽"). Сегодняшняя дата: ${todayISO}. Учитывай заголовки дат ("Вчера", "11 ноября" и т.д.) и переводи их в формат YYYY-MM-DD. Сопоставь каждую операцию с наиболее подходящим categoryId из списка: [${categoriesListText}]. Если это списание/покупка (со знаком минус) — type="expense", если пополнение/перевод/зарплата/кэшбэк (со знаком плюс) — type="income". Сумму укажи целым положительным числом в рублях (округлив копейки). В поле note укажи название магазина/отправителя и подкатегорию из банка (например: "Сервисы Яндекса • Фастфуд" или "Лента • Супермаркеты").`,
+            text: `Распознай все отдельные банковские операции или позиции чека на этом скриншоте (игнорируй общие виджеты итогов за месяц в шапке и мелкие строки начисления бонусов/кэшбэка вроде "РАЛЛИБУСТ +31₽" под основной суммой покупки). Сегодняшняя дата: ${todayISO}. Учитывай заголовки дат ("Сегодня", "Вчера", "11 ноября" и т.д.) и переводи их в формат YYYY-MM-DD. Сопоставь каждую операцию с наиболее подходящим categoryId из списка: [${categoriesListText}]. Если это списание/покупка (со знаком минус) — type="expense", если пополнение/перевод/зарплата/кэшбэк (со знаком плюс) — type="income". Сумму укажи целым положительным числом в рублях (округлив копейки). В поле note укажи чистое название магазина или отправителя на русском языке.`,
           },
         ],
       },
