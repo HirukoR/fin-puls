@@ -11,7 +11,7 @@ import {
 } from './financeMath';
 import { createDemoStoreData, DEFAULT_CATEGORIES } from '../data/demoData';
 import { generateLocalFinancialAnalysis } from './aiAdvisor';
-import { parseBankStatementText } from './receiptScanner';
+import { parseBankStatementText, reconstructPdfRowsFromItems } from './receiptScanner';
 
 test('calculateMonthlyMetrics computes income, expenses, free balance, and savings rate accurately', () => {
   const metrics = calculateMonthlyMetrics([
@@ -328,4 +328,154 @@ test('parseBankStatementText parses Rocketbank wide-font OCR output accurately',
   );
 });
 
+test('parseBankStatementText parses second Rocketbank screenshot with VITA APTEKA 3930 and S С МОЕГО СЧЕТА', () => {
+  const rocketSecondOcrLines = [
+    '23:59 A we 79',
+    'ЭЙ, РОКИ a)',
+    '0640',
+    '142 Q',
+    'сегодня',
+    'СВЕТЛАНА С. +3 ооо Р',
+    'СВЕТЛАНА С. +30 ооо Р',
+    'О ЛЕНТА —1 158,99 2',
+    'РАЛЛИБУСТ 6,66% 6,66% +77Р',
+    '© VITA APTEKA 3930 -1 O11 2',
+    'РАЛЛИБУСТ 6,66% 6,66% +67Р',
+    'Keb КРАСНОЕ & БЕЛОЕ —-2аэ,67 2',
+    'РАЛЛИБУСТ 6,66% 6,66% +16Р',
+    'S С МОЕГО СЧЕТА —-аз,48 2',
+    'i НА К’',
+    'вчера',
+  ].join('\n');
+
+  const parsed = parseBankStatementText(
+    rocketSecondOcrLines,
+    DEFAULT_CATEGORIES,
+    new Date('2026-11-14T15:30:00')
+  );
+
+  assert.equal(parsed.length, 6);
+  assert.deepEqual(
+    parsed.map((p) => ({
+      type: p.type,
+      amount: p.amount,
+      categoryId: p.categoryId,
+      date: p.date,
+      note: p.note,
+    })),
+    [
+      {
+        type: 'income',
+        amount: 3000,
+        categoryId: 'cat_gifts',
+        date: '2026-11-14',
+        note: 'СВЕТЛАНА С.',
+      },
+      {
+        type: 'income',
+        amount: 30000,
+        categoryId: 'cat_gifts',
+        date: '2026-11-14',
+        note: 'СВЕТЛАНА С.',
+      },
+      {
+        type: 'expense',
+        amount: 1159,
+        categoryId: 'cat_food',
+        date: '2026-11-14',
+        note: 'Лента',
+      },
+      {
+        type: 'expense',
+        amount: 1011,
+        categoryId: 'cat_health',
+        date: '2026-11-14',
+        note: 'Vita Apteka',
+      },
+      {
+        type: 'expense',
+        amount: 250,
+        categoryId: 'cat_food',
+        date: '2026-11-14',
+        note: 'Красное & Белое',
+      },
+      {
+        type: 'expense',
+        amount: 43,
+        categoryId: 'cat_other',
+        date: '2026-11-14',
+        note: 'С моего счёта • На копилку',
+      },
+    ]
+  );
+});
+
+test('reconstructPdfRowsFromItems and parseBankStatementText parse multi-column PDF bank statements accurately', () => {
+  const pdfPositionedCells = [
+    // Header row at y=780
+    { str: 'Выписка по счёту 40817810538001234567 за период с 01.11.2026 по 14.11.2026', x: 40, y: 780 },
+    // Summary row at y=750
+    { str: 'Входящий остаток 45 200,00 ₽', x: 40, y: 750 },
+    { str: 'Исходящий остаток 98 410,00 ₽', x: 300, y: 750 },
+    // Row 1 (T-Bank style with duplicate amount columns and trailing card tail 4377) at y=700
+    { str: '-1 480,00 ₽', x: 260, y: 700.5 },
+    { str: '13.11.2026', x: 40, y: 700 },
+    { str: '19:42', x: 105, y: 700 },
+    { str: '-1 480,00 ₽', x: 340, y: 700 },
+    { str: 'Оплата в Пятёрочка', x: 420, y: 699.8 },
+    { str: '4377', x: 540, y: 700 },
+    // Row 2 (Sberbank style unsigned 2-decimal expense on dated row) at y=670
+    { str: '12.11.2026', x: 40, y: 670 },
+    { str: '14:15', x: 105, y: 670 },
+    { str: 'VITA APTEKA 3930', x: 180, y: 670 },
+    { str: '1 011,00', x: 480, y: 670 },
+    // Row 3 (Salary income) at y=640
+    { str: '11.11.2026', x: 40, y: 640 },
+    { str: '+65 000,00 ₽', x: 340, y: 640 },
+    { str: 'Зачисление заработной платы', x: 430, y: 640 },
+  ];
+
+  const reconstructedLines = reconstructPdfRowsFromItems(pdfPositionedCells);
+  assert.equal(reconstructedLines.length, 5);
+
+  const parsed = parseBankStatementText(
+    reconstructedLines.join('\n'),
+    DEFAULT_CATEGORIES,
+    new Date('2026-11-14T15:30:00')
+  );
+
+  assert.equal(parsed.length, 3);
+  assert.deepEqual(
+    parsed.map((p) => ({
+      type: p.type,
+      amount: p.amount,
+      categoryId: p.categoryId,
+      date: p.date,
+      note: p.note,
+    })),
+    [
+      {
+        type: 'expense',
+        amount: 1480,
+        categoryId: 'cat_food',
+        date: '2026-11-13',
+        note: 'Пятёрочка',
+      },
+      {
+        type: 'expense',
+        amount: 1011,
+        categoryId: 'cat_health',
+        date: '2026-11-12',
+        note: 'Vita Apteka',
+      },
+      {
+        type: 'income',
+        amount: 65000,
+        categoryId: 'cat_salary',
+        date: '2026-11-11',
+        note: 'Зачисление заработной платы',
+      },
+    ]
+  );
+});
 

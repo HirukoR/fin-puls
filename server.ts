@@ -112,14 +112,15 @@ async function startServer() {
     }
 
     try {
-      const { imageBase64, mimeType, categories } = req.body as {
+      const { imageBase64, mimeType, pdfText, categories } = req.body as {
         imageBase64?: string;
         mimeType?: string;
+        pdfText?: string;
         categories?: { id: string; name: string; type: string }[];
       };
 
-      if (!imageBase64) {
-        res.status(400).json({ error: 'Missing imageBase64' });
+      if (!imageBase64 && !pdfText) {
+        res.status(400).json({ error: 'Missing imageBase64 or pdfText' });
         return;
       }
 
@@ -137,20 +138,35 @@ async function startServer() {
         .join(', ');
       const todayISO = new Date().toISOString().slice(0, 10);
 
+      const promptText = `Распознай все отдельные банковские операции из этой банковской выписки или скриншота (игнорируй общие виджеты итогов за период, входящий/исходящий остаток, номера счетов и мелкие строки начисления бонусов вроде "РАЛЛИБУСТ +31₽"). Сегодняшняя дата: ${todayISO}. Учитывай даты операций (ДД.ММ.ГГГГ, "Сегодня", "Вчера", "11 ноября" и т.д.) и переводи их в формат YYYY-MM-DD. Сопоставь каждую операцию с наиболее подходящим categoryId из списка: [${categoriesListText}]. Если это списание/покупка — type="expense", если пополнение/перевод/зарплата/кэшбэк — type="income". Сумму укажи целым положительным числом в рублях (округлив копейки). В поле note укажи чистое название магазина, сервиса или отправителя на русском языке.`;
+
+      const parts: Array<
+        | { text: string }
+        | { inlineData: { mimeType: string; data: string } }
+      > = [];
+
+      if (pdfText && pdfText.trim().length > 0) {
+        parts.push({
+          text: `Текст банковской PDF-выписки:\n${pdfText.slice(0, 30000)}\n\n${promptText}`,
+        });
+      } else if (imageBase64) {
+        parts.push(
+          {
+            inlineData: {
+              mimeType: mimeType || 'image/jpeg',
+              data: imageBase64,
+            },
+          },
+          {
+            text: promptText,
+          }
+        );
+      }
+
       const response = await ai.models.generateContent({
         model: 'gemini-4-hydrogen',
         contents: {
-          parts: [
-            {
-              inlineData: {
-                mimeType: mimeType || 'image/jpeg',
-                data: imageBase64,
-              },
-            },
-            {
-              text: `Распознай все отдельные банковские операции или позиции чека на этом скриншоте (игнорируй общие виджеты итогов за месяц в шапке вроде "Расходы 10 875 ₽ / Доходы 10 908 ₽"). Сегодняшняя дата: ${todayISO}. Учитывай заголовки дат ("Вчера", "11 ноября" и т.д.) и переводи их в формат YYYY-MM-DD. Сопоставь каждую операцию с наиболее подходящим categoryId из списка: [${categoriesListText}]. Если это списание/покупка (со знаком минус) — type="expense", если пополнение/перевод/зарплата/кэшбэк (со знаком плюс) — type="income". Сумму укажи целым положительным числом в рублях (округлив копейки). В поле note укажи название магазина/отправителя и подкатегорию из банка (например: "Сервисы Яндекса • Фастфуд" или "Лента • Супермаркеты").`,
-            },
-          ],
+          parts,
         },
         config: {
           thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },

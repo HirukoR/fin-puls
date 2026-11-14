@@ -43,6 +43,8 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     'Анализируем скриншот и распределяем по категориям...'
   );
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [uploadedIsPdf, setUploadedIsPdf] = useState(false);
   const [rawText, setRawText] = useState('');
   const [drafts, setDrafts] = useState<ScannedTransactionDraft[]>([]);
   const [infoBanner, setInfoBanner] = useState<string | null>(null);
@@ -51,13 +53,16 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-    // Handle Ctrl+V paste of screenshots directly into the modal
+    // Handle Ctrl+V paste of screenshots or PDF files directly into the modal
     const handlePaste = async (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
       if (!items) return;
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        if (item.type.startsWith('image/')) {
+        if (
+          item.type.startsWith('image/') ||
+          item.type === 'application/pdf'
+        ) {
           const file = item.getAsFile();
           if (file) {
             e.preventDefault();
@@ -75,10 +80,24 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
   if (!isOpen) return null;
 
   const processImageFile = async (file: File) => {
-    const objectUrl = URL.createObjectURL(file);
-    setPreviewUrl(objectUrl);
+    const isPdf =
+      file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    setUploadedFileName(file.name);
+    setUploadedIsPdf(isPdf);
+
+    if (!isPdf) {
+      const objectUrl = URL.createObjectURL(file);
+      setPreviewUrl(objectUrl);
+    } else {
+      setPreviewUrl(null);
+    }
+
     setIsScanning(true);
-    setScanStatusText('Подготовка скриншота и запуск распознавания...');
+    setScanStatusText(
+      isPdf
+        ? 'Чтение PDF-выписки и извлечение таблицы операций...'
+        : 'Подготовка скриншота и запуск распознавания...'
+    );
     setInfoBanner(null);
 
     try {
@@ -86,15 +105,18 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
         setScanStatusText(status);
       });
       setDrafts(result.drafts);
+      if (result.previewDataUrl) {
+        setPreviewUrl(result.previewDataUrl);
+      }
       if (result.recognizedText) {
         setRawText(result.recognizedText);
       }
-      if (result.source === 'gemini_vision') {
-        setInfoBanner(
-          `ИИ-сканер успешно распознал операций на скриншоте: ${result.drafts.length}. Проверьте категории перед сохранением.`
-        );
-      } else if (result.message) {
+      if (result.message) {
         setInfoBanner(result.message);
+      } else if (result.source === 'gemini_vision') {
+        setInfoBanner(
+          `ИИ-сканер успешно распознал операций: ${result.drafts.length}. Проверьте категории перед сохранением.`
+        );
       }
     } finally {
       setIsScanning(false);
@@ -186,6 +208,8 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
     );
     setDrafts([]);
     setPreviewUrl(null);
+    setUploadedFileName(null);
+    setUploadedIsPdf(false);
     setRawText('');
     setInfoBanner(null);
     onClose();
@@ -208,10 +232,10 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                 id="scanner-modal-title"
                 className="text-base font-bold text-slate-900 dark:text-slate-100"
               >
-                Сканер скриншотов и выписок из банка
+                Сканер скриншотов и PDF-выписок из банка
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Загрузите скриншот истории операций (или нажмите Ctrl+V) — приложение само определит магазины, категории и суммы
+                Загрузите PDF-выписку или скриншот операций (или нажмите Ctrl+V) — приложение само определит магазины, категории, даты и суммы
               </p>
             </div>
           </div>
@@ -241,7 +265,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                 }`}
               >
                 <ImageIcon className="w-3.5 h-3.5" />
-                <span>Скриншот / Фото чека</span>
+                <span>Скриншот / PDF-выписка</span>
               </button>
               <button
                 type="button"
@@ -274,7 +298,7 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
             </div>
           </div>
 
-          {/* Input Zone: Image Upload OR Raw Text */}
+          {/* Input Zone: Image / PDF Upload OR Raw Text */}
           {mode === 'image' ? (
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
               <div
@@ -286,13 +310,13 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                   if (file) await processImageFile(file);
                 }}
                 className={`${
-                  previewUrl ? 'md:col-span-7' : 'md:col-span-12'
+                  previewUrl || uploadedFileName ? 'md:col-span-7' : 'md:col-span-12'
                 } rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 bg-slate-50/60 dark:bg-slate-800/30 p-6 flex flex-col items-center justify-center text-center transition-colors cursor-pointer`}
               >
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/*,.pdf,application/pdf"
                   onChange={handleFileChange}
                   className="hidden"
                 />
@@ -307,25 +331,36 @@ export const ReceiptScannerModal: React.FC<ReceiptScannerModalProps> = ({
                   <>
                     <Upload className="w-7 h-7 text-emerald-600 dark:text-emerald-400" />
                     <p className="mt-2 text-sm font-bold text-slate-900 dark:text-slate-100">
-                      Нажмите для выбора скриншота из банка или перетащите файл сюда
+                      Нажмите для выбора PDF-выписки или скриншота из банка (или перетащите файл сюда)
                     </p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Поддерживаются скриншоты Т-Банка, Сбера, Альфа-Банка, ВТБ и Ozon Банка (можно просто нажать Ctrl+V)
+                      Поддерживаются PDF-выписки (.pdf) и скриншоты Т-Банка, Сбера, Альфа-Банка, ВТБ, Ozon и Рокетбанка
                     </p>
                   </>
                 )}
               </div>
 
-              {previewUrl && (
+              {(previewUrl || uploadedFileName) && (
                 <div className="md:col-span-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-950/5 dark:bg-slate-950 p-3 flex flex-col items-center justify-center relative">
-                  <img
-                    src={previewUrl}
-                    alt="Загруженный скриншот из банка"
-                    referrerPolicy="no-referrer"
-                    className="max-h-40 w-auto object-contain rounded-lg"
-                  />
-                  <span className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
-                    Превью загруженного скриншота
+                  {previewUrl ? (
+                    <img
+                      src={previewUrl}
+                      alt="Превью загруженного файла"
+                      referrerPolicy="no-referrer"
+                      className="max-h-40 w-auto object-contain rounded-lg"
+                    />
+                  ) : (
+                    <div className="py-6 flex flex-col items-center gap-2 text-slate-600 dark:text-slate-300">
+                      <FileText className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
+                      <span className="text-xs font-semibold truncate max-w-[220px]">
+                        {uploadedFileName}
+                      </span>
+                    </div>
+                  )}
+                  <span className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[240px]">
+                    {uploadedIsPdf
+                      ? `PDF-выписка: ${uploadedFileName || 'документ.pdf'}`
+                      : 'Превью загруженного скриншота'}
                   </span>
                 </div>
               )}
